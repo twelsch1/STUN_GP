@@ -1,15 +1,15 @@
 
 // Uncomment this line to use manually created local clone of the repository
-// lazy val fuel = RootProject( file("../fuel") )
-lazy val fuel = RootProject(uri("git://github.com/kkrawiec/fuel.git"))
+ lazy val fuel = RootProject( file("../fuel") )
+//lazy val fuel = RootProject(uri("git://github.com/kkrawiec/fuel.git"))
 
 // Uncomment this line to use manually created local clone of the repository
-// lazy val swim = RootProject( file("../swim") )
-lazy val swim = RootProject(uri("git://github.com/kkrawiec/swim.git"))
+ lazy val swim = RootProject( file("../swim") )
+//lazy val swim = RootProject(uri("git://github.com/kkrawiec/swim.git"))
 
 // Uncomment this line to use manually created local clone of the repository
-// lazy val sygusParser = RootProject( file("../SyGuS") )
-lazy val sygusParser = RootProject(uri("git://github.com/JerrySwan/SyGuS.git"))
+ lazy val sygusParser = RootProject( file("../SyGuS") )
+//lazy val sygusParser = RootProject(uri("git://github.com/JerrySwan/SyGuS.git"))
 
 
 lazy val root = (project in file(".")).
@@ -17,7 +17,7 @@ lazy val root = (project in file(".")).
     name := "CDGP",
     version := "1.0",
     mainClass in Compile := Some("app.Main"),
-    scalaVersion := "2.11.11",
+    scalaVersion := "2.11.12",
     scalacOptions := Seq("-unchecked", "-deprecation", "-feature"),
     libraryDependencies ++= Seq(
         "org.scala-lang" % "scala-compiler" % scalaVersion.value,
