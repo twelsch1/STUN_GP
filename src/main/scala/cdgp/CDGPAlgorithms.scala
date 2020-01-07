@@ -6,8 +6,9 @@ import fuel.util.{CallCounter, CallEvery, Collector, Options, TRandom}
 import swim.eval.{EpsLexicaseSelection, LexicaseSelection01}
 import swim.tree._
 
-import scala.collection.mutable
 
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
 /**
   * This file contains some ready to use genetic programming algorithms using
@@ -185,6 +186,27 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
   override def terminate =
     Termination(correct) ++ Seq(Termination.MaxIter(it), (s: StatePop[(Op,E)]) => validSetTermination(bsf))
   override def evaluate = cdgpEval
+  /*  override def evaluate: StatePop[Op] => StatePop[(Op,E)] = // used only for the initial population
+    (s: StatePop[Op]) => {
+      cdgpEval.state.testsManager.flushHelpers()  //makes sure tests are added
+	  cdgpEval.state.addNewTests = false
+      val intercept = StatePop(s.map{ op => (op, cdgpEval.eval(op, init=false)) })
+	  //Console.println(intercept(0))
+	  //val programAndEvals = ListBuffer[(Op,E)]()
+	  //programAndEvals += intercept(0)
+	  //val programs = ListBuffer[Op]()
+	  
+	  cdgpEval.state.addNewTests = true
+	  for (i <- 0 until 10) {
+		  //programs += intercept(i)._1
+		  cdgpEval.eval(intercept(i)._1, init=false)
+	  }
+	 
+	  
+	  
+	  //Console.println(programAndEvals)
+	  intercept
+    }*/ 
   override def report = bsf
   override def algorithm =
     (s: StatePop[(Op, E)]) =>  Common.restartLoop(initialize, super.algorithm, correct, it, bsf, opt, coll)(s)

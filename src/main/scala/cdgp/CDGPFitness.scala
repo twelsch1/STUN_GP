@@ -294,15 +294,34 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
     // CDGP in a discrete variant treats all tests as binary (passed or not), so all types of tests are treated equally.
     val evalForRatio = evalCompl ++ evalIncompl ++ evalSpecial
     val numPassed = evalForRatio.count(_ == 0)
+	var localTestsRatio = testsRatio
+	//Console.println(state.testsManager.newTests.size)
+	//if we hit max number of tests, only test perfect programs
+	if (state.testsManager.newTests.size == maxNewTestsPerIter) {
+		localTestsRatio = 1.0
+	}
+	
     if (testsMaxDiff.isDefined)
       evalForRatio.size - numPassed <= testsMaxDiff.get
-    else
-      evalForRatio.isEmpty || (numPassed.toDouble / evalForRatio.size) >= testsRatio
+    else {
+		
+		// if no tests return true unless max tests has already been reached, if there are tests check against the (potentially modified) ratio
+		if (evalForRatio.isEmpty && state.testsManager.newTests.size < maxNewTestsPerIter) {
+			true
+		} else if (evalForRatio.isEmpty && state.testsManager.newTests.size == maxNewTestsPerIter) {
+			false
+		} else {
+			(numPassed.toDouble / evalForRatio.size) >= localTestsRatio
+		}
+	
+		//evalForRatio.isEmpty || (numPassed.toDouble / evalForRatio.size) >= localTestsRatio
+	}
+      
   }
 
 
   /** Fitness is always computed on the tests that were flushed. */
-  def fitnessCDGPGeneral(ignoreVerification: Boolean = false): Op => (Boolean, Seq[Int]) =
+  def fitnessCDGPGeneral(ignoreVerification: Boolean = false, addNewTests: Boolean = true): Op => (Boolean, Seq[Int]) =
     if (state.sygusData.formalInvocations.isEmpty) fitnessOnlyTestCases
     else (s: Op) => {
       val tests = state.testsManager.getTests()
@@ -311,7 +330,9 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
       // and a counterexample will be produced (or program will be deemed correct).
       // NOTE: if the program does not pass all test cases, then the probability is high
       // that the produced counterexample will already be in the set of test cases.
-      if (ignoreVerification || !doVerify(evalTests, tests))
+	  //only verify perfect programs by setting to 1.0, this is short circuited if addNewTests is true
+	  //prior to change 2418 solver calls were made... reduced it to 1129, which cut our time in half
+      if ((ignoreVerification || !doVerify(evalTests, tests)))
         (false, evalTests)
       else {
         val (decision, r) = verifySolution(s, evalTests)  //state.verify(s)
@@ -321,7 +342,7 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
         else if (decision == "sat") {
           if (state.testsManager.newTests.size < maxNewTestsPerIter) {
             val newTest = state.createTestFromFailedVerification(r.get)
-            if (newTest.isDefined)
+            if (newTest.isDefined && addNewTests)
               state.testsManager.addNewTest(newTest.get, allowInputDuplicates=false, allowTestDuplicates=false)
           }
           (false, evalTests)
@@ -407,7 +428,8 @@ object EvalDiscrete {
     val ordering = FSeqIntOrdering
     new EvalCDGPDiscrete(state, testsTypesForRatio, ec, ei, es, correct, ordering) {
       override def apply(s: Op, init: Boolean): FSeqInt = {
-        val (isPerfect, eval) = fitnessCDGPGeneral(init)(s)
+		
+        val (isPerfect, eval) = fitnessCDGPGeneral(init, state.addNewTests)(s)
         FSeqInt(isPerfect, eval, s.size)
       }
       override def updateEval(s: (Op, FSeqInt)): (Op, FSeqInt) = {
@@ -584,7 +606,9 @@ abstract class EvalCDGPContinuous[E](state: StateCDGP,
     * @param evalTests Evaluations on all tests (complete, incomplete, special).
     */
   def doVerify(evalTests: Seq[Double], tests: Seq[(Map[String, Any], Option[Any])]): Boolean = {
+
     val (passed, total) = getNumPassedAndTotal(evalTests, tests)
+
     if (testsMaxDiff.isDefined)
       total - passed <= testsMaxDiff.get
     else
