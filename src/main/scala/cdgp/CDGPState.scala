@@ -27,6 +27,8 @@ abstract class State(val sygusData: SygusProblemData,
   val sizeTestSet: Option[Int] = opt.getOptionInt("sizeTestSet")
 
   var addNewTests = true
+  
+  var verifyTime = 0.0 
   // Initializing population of test cases
   val (trainingSet, validationSet, testSet) = createTestsSets
   testsManager.addNewTests(trainingSet, allowInputDuplicates=true, allowTestDuplicates=allowTestDuplicates)

@@ -335,7 +335,10 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
       if ((ignoreVerification || !doVerify(evalTests, tests)))
         (false, evalTests)
       else {
+		val start = System.nanoTime;
         val (decision, r) = verifySolution(s, evalTests)  //state.verify(s)
+		val end = System.nanoTime;
+		state.verifyTime = state.verifyTime + (end - start) / 1000000000.0
         if (decision == "unsat" && evalTests.sum == 0 &&
            (state.sygusData.logic != "SLIA" || evalTests.nonEmpty))  // a guard against bugs in the solver for Strings
           (true, evalTests) // perfect program found; end of run

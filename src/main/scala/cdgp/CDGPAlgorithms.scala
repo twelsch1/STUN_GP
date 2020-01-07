@@ -37,6 +37,13 @@ trait CDGPAlgorithm[S <: Op, E <: Fitness] {
     * Number of generations until the algorithm ended.
     */
   var numGenerations = 0
+  
+  var totalTime = 0.0
+  var totalVerificationTime = 0.0
+  var totalEvaluationTime = 0.0
+  
+  
+  var iterStart = System.nanoTime
 
   /**
     * Saves the provided state of the population and returns it, so that it can
@@ -44,9 +51,23 @@ trait CDGPAlgorithm[S <: Op, E <: Fitness] {
     */
   def updateAfterIteration(s: StatePop[(S, E)]): StatePop[(S, E)] = {
     pop = Some(s)
+	
+	Console.println("Verification Time: " + cdgpState.verifyTime)
+	totalVerificationTime = totalVerificationTime + cdgpState.verifyTime
+	cdgpState.verifyTime = 0.0
+	//doesn't really work for first generation, though that isn't really a big deal for my purposes
+	val iterEnd = System.nanoTime 
+	val iterTime = (iterEnd - iterStart) / 1000000000.0
+	Console.println("Iteration Time: " + iterTime) 
+	totalTime = iterTime //should be pretty close to the run time shown at the end
+	iterStart = System.nanoTime
+	
     numGenerations += 1
     s
   }
+  
+  
+  
 
   def reportStats(s: StatePop[(S, E)])
                  (implicit opt: Options, coll: Collector): StatePop[(S, E)] = {
@@ -185,28 +206,34 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
   override def epilogue = super.epilogue andThen reportStats
   override def terminate =
     Termination(correct) ++ Seq(Termination.MaxIter(it), (s: StatePop[(Op,E)]) => validSetTermination(bsf))
-  override def evaluate = cdgpEval
-  /*  override def evaluate: StatePop[Op] => StatePop[(Op,E)] = // used only for the initial population
+  //override def evaluate = cdgpEval
+    override def evaluate: StatePop[Op] => StatePop[(Op,E)] = 
     (s: StatePop[Op]) => {
+		
       cdgpEval.state.testsManager.flushHelpers()  //makes sure tests are added
-	  cdgpEval.state.addNewTests = false
+	  //cdgpEval.state.addNewTests = false
+	  val evalStart = System.nanoTime 
       val intercept = StatePop(s.map{ op => (op, cdgpEval.eval(op, init=false)) })
+	  val evalEnd = System.nanoTime
+	  val evalTime = (evalEnd - evalStart) / 1000000000.0
+	  Console.println("Evaluation Time: " + evalTime)
+	  totalEvaluationTime = totalEvaluationTime + evalTime
 	  //Console.println(intercept(0))
 	  //val programAndEvals = ListBuffer[(Op,E)]()
 	  //programAndEvals += intercept(0)
 	  //val programs = ListBuffer[Op]()
 	  
-	  cdgpEval.state.addNewTests = true
-	  for (i <- 0 until 10) {
+	  //cdgpEval.state.addNewTests = true
+	 /* for (i <- 0 until 10) {
 		  //programs += intercept(i)._1
 		  cdgpEval.eval(intercept(i)._1, init=false)
-	  }
+	  }*/
 	 
 	  
 	  
 	  //Console.println(programAndEvals)
 	  intercept
-    }*/ 
+    }
   override def report = bsf
   override def algorithm =
     (s: StatePop[(Op, E)]) =>  Common.restartLoop(initialize, super.algorithm, correct, it, bsf, opt, coll)(s)
