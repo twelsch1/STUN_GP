@@ -34,6 +34,7 @@ object CDGP {
         val alg = CDGPGenerationalLexicase(eval)
         val finalPop = Main.watchTime(alg, RunExperiment(alg))
         (state, finalPop, alg.bsf.bestSoFar)
+		
 
       case ("lexicase", "steadyState") =>
         val eval = EvalDiscrete.EvalGPRSeqInt(state, testsTypesForRatio)
@@ -127,6 +128,13 @@ object CDGP {
         val alg = CDGPGenerationalLexicase(eval)
         val finalPop = Main.watchTime(alg, RunExperiment(alg))
         (state, finalPop, alg.bsf.bestSoFar)
+		
+	  case ("knobelty", "generational") =>
+        val eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio)
+        val alg = CDGPGenerationalKnobelty(eval)
+        val finalPop = Main.watchTime(alg, RunExperiment(alg))
+        (state, finalPop, alg.bsf.bestSoFar)
+
 
       case ("lexicase", "steadyState") =>
         val eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio)
@@ -198,7 +206,7 @@ object CDGP {
       assert(method == "CDGP" || method == "GPR", s"Invalid method '$method'! Possible values: 'CDGP', 'GPR'.")
       assert(evoMode == "generational" || evoMode == "steadyState",
         s"Invalid evolutionMode: '$evoMode'! Possible values: 'generational', 'steadyState'.")
-      assert(selection == "tournament" || selection == "lexicase",
+      assert(selection == "tournament" || selection == "lexicase" || selection == "knobelty",
         s"Invalid selection: '$selection'! Possible values: 'tournament', 'lexicase'.")
       assert(multipopScheme == "none" || multipopScheme == "convectionEqualNumber",
         s"Invalid multipopScheme: '$multipopScheme'! Possible values: 'none', 'convectionEqualNumber'.")

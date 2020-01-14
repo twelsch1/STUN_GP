@@ -132,7 +132,7 @@ object CDGPOptions {
   args += OptionInfo("evolutionMode", "String", choice=Set("generational", "steadyState"), default=Some("steadyState"), desc="Type of evolution: generational (new population is created), or steady state (solutions are updated in place one by one).")
   args += OptionInfo("maxGenerations", "Int", default=Some("50"), desc="Maximum number of generations.")
   args += OptionInfo("maxTime", "Int", default=Some("86400000"), desc="Maximum runtime.")
-  args += OptionInfo("selection", "String", choice=Set("lexicase", "tournament"), default=Some("lexicase"), desc="Selection of the evolutionary algorithm.")
+  args += OptionInfo("selection", "String", choice=Set("lexicase", "tournament", "knobelty"), default=Some("lexicase"), desc="Selection of the evolutionary algorithm.")
 
   // other args
   args += OptionInfo("allowTestDuplicates", "Bool", default=Some("false"), desc="If false, then the test duplicates will not be added to the set of test cases. In most cases the preferred option.")
