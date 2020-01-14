@@ -307,7 +307,7 @@ class CDGPGenerationalKnobelty[E <: FSeqInt](moves: GPMoves,
 	}
 	//Console.println(programCounts)
 	
-    val selection = new KnobeltySelection[Op, E]
+    val selection = new KnobeltySelection[Op, E](programCounts)
     SimpleBreeder[Op, E](selection, moves: _*)
 
   }
