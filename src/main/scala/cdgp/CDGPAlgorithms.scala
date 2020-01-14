@@ -3,7 +3,7 @@ package cdgp
 import fuel.core.StatePop
 import fuel.func._
 import fuel.util.{CallCounter, CallEvery, Collector, Options, TRandom}
-import swim.eval.{EpsLexicaseSelection, LexicaseSelection01}
+import swim.eval.{EpsLexicaseSelection, LexicaseSelection01, KnobeltySelection}
 import swim.tree._
 
 
@@ -52,13 +52,13 @@ trait CDGPAlgorithm[S <: Op, E <: Fitness] {
   def updateAfterIteration(s: StatePop[(S, E)]): StatePop[(S, E)] = {
     pop = Some(s)
 	
-	Console.println("Verification Time: " + cdgpState.verifyTime)
+	//Console.println("Verification Time: " + cdgpState.verifyTime)
 	totalVerificationTime = totalVerificationTime + cdgpState.verifyTime
 	cdgpState.verifyTime = 0.0
 	//doesn't really work for first generation, though that isn't really a big deal for my purposes
 	val iterEnd = System.nanoTime 
 	val iterTime = (iterEnd - iterStart) / 1000000000.0
-	Console.println("Iteration Time: " + iterTime) 
+	//Console.println("Iteration Time: " + iterTime) 
 	totalTime = iterTime //should be pretty close to the run time shown at the end
 	iterStart = System.nanoTime
 	
@@ -214,22 +214,48 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
 	  //cdgpEval.state.addNewTests = false
 	  val evalStart = System.nanoTime 
       val intercept = StatePop(s.map{ op => (op, cdgpEval.eval(op, init=false)) })
+	  
+	  //Console.println("Here is this stupid thing " + intercept(0)._2.getClass)
 	  val evalEnd = System.nanoTime
 	  val evalTime = (evalEnd - evalStart) / 1000000000.0
-	  Console.println("Evaluation Time: " + evalTime)
+	  //Console.println("Evaluation Time: " + evalTime)
 	  totalEvaluationTime = totalEvaluationTime + evalTime
+	  
+	 /* Grammar('I,Map('I -> List('y1, 'y2, 'y3, 'y4, 'y5, 'k1, ConstantMarker(Int), ('+,('I,'I)), 
+('-,('I,'I)), ('*,('I_const,'I)), ('div,('I,'I_const)), ('mod,('I,'I_const)), 
+('ite,('B,'I,'I))), 'I_const -> List(ConstantMarker(Int)), 'B -> List(('=,('I,'I)), 
+('<,('I,'I)), ('<=,('I,'I)), ('>,('I,'I)), ('>=,('I,'I)), ('and,('B,'B)), ('or,('B,'B)), ('not,'B)))) */
+	  //val gram = cdgpState.sygusData.synthTask.argNames
+	  
+	 /* val gram = ListBuffer[Symbol]('ite,'mod,'div,'+,'-,'*,'<,'<=,'>,'>=,'and,'or,'not)
+
+	  for (problemVar <- cdgpState.sygusData.synthTask.argNames)
+		  gram += Symbol(problemVar)
+
+	  Console.println(gram)
+	  val check = intercept(0)._1
+	  Console.println(intercept(0)._2)
+	  Console.println(check)
+	  var nonConstCount = 0
+	  for (sym <- gram)
+		  nonConstCount += check.count(sym)
+	  Console.println(nonConstCount)
+	  
+	  */
+	  
 	  //Console.println(intercept(0))
 	  //val programAndEvals = ListBuffer[(Op,E)]()
 	  //programAndEvals += intercept(0)
 	  //val programs = ListBuffer[Op]()
 	  
 	  //cdgpEval.state.addNewTests = true
-	 /* for (i <- 0 until 10) {
+	  //for (i <- 0 until 10) {
 		  //programs += intercept(i)._1
-		  cdgpEval.eval(intercept(i)._1, init=false)
-	  }*/
+		  //cdgpEval.eval(intercept(i)._1, init=false)
+	  //}
 	 
-	  
+	  //following evaluation, update cache with update eval like
+	  //in steady state implementation, and then add our new programs...
 	  
 	  //Console.println(programAndEvals)
 	  intercept
@@ -254,6 +280,22 @@ class CDGPGenerationalStaticBreeder[E <: Fitness](moves: GPMoves,
   override def createBreeder(s: StatePop[(Op, E)]) = breeder
 }
 
+class CDGPGenerationalKnobelty[E <: FSeqInt](moves: GPMoves,
+                                                  cdgpEval: CDGPFuelEvaluation[Op, E],
+                                                  correct: (Op, E) => Boolean,
+                                                  validTermination: BestSoFar[Op, E] => Boolean = (s: BestSoFar[Op,E]) => false)
+                                                 (implicit opt: Options, coll: Collector, rng: TRandom, ordering: Ordering[E])
+  extends CDGPGenerationalCore[E](moves, cdgpEval, correct, validTermination) {
+  
+  //override def createBreeder(s: StatePop[(Op, E)]) = breeder
+  
+  def createBreeder(s: StatePop[(Op, E)]): (StatePop[(Op, E)] => StatePop[Op]) = {
+	//we're gonna calculate the counts here...
+    val selection = new KnobeltySelection[Op, E]
+    SimpleBreeder[Op, E](selection, moves: _*)
+
+  }
+}
 
 class CDGPGenerationalEpsLexicase[E <: FSeqDouble](moves: GPMoves,
                                                    cdgpEval: CDGPFuelEvaluation[Op, E],
@@ -267,6 +309,8 @@ class CDGPGenerationalEpsLexicase[E <: FSeqDouble](moves: GPMoves,
     SimpleBreeder[Op, E](sel, RandomMultiOperator(moves: _*))
   }
 }
+
+
 
 
 object CDGPGenerationalStaticBreeder {
@@ -295,9 +339,30 @@ object CDGPGenerationalTournament {
 object CDGPGenerationalLexicase {
   def apply[E <: FSeqInt](eval: EvalFunction[Op, E], validTermination: BestSoFar[Op,E] => Boolean = (s: BestSoFar[Op,E]) => false)
                          (implicit opt: Options, coll: Collector, rng: TRandom): CDGPGenerationalStaticBreeder[E] = {
-    val cdgpEval = new CDGPFuelEvaluation[Op, E](eval)
+    
+	val cdgpEval = new CDGPFuelEvaluation[Op, E](eval)
     val sel = new LexicaseSelection01[Op, E]
     CDGPGenerationalStaticBreeder[E](cdgpEval, sel, validTermination)
+	
+	
+  }
+}
+
+object CDGPGenerationalKnobelty {
+  def apply[E <: FSeqInt](eval: EvalFunction[Op, E], validTermination: BestSoFar[Op,E] => Boolean = (s: BestSoFar[Op,E]) => false)
+                         (implicit opt: Options, coll: Collector, rng: TRandom): CDGPGenerationalKnobelty[E] = {
+    
+	/*val cdgpEval = new CDGPFuelEvaluation[Op, E](eval)
+    val sel = new LexicaseSelection01[Op, E]
+    CDGPGenerationalStaticBreeder[E](cdgpEval, sel, validTermination)
+	*/
+	implicit val ordering = eval.ordering
+    val grammar = eval.state.sygusData.getSwimGrammar(rng)
+    val moves = GPMoves(grammar, Common.isFeasible(eval.state.synthTask.fname, opt))
+    val cdgpEval = new CDGPFuelEvaluation[Op, E](eval)
+    val correct = Common.correct(cdgpEval.eval)
+	new CDGPGenerationalKnobelty(moves, cdgpEval, correct, validTermination)
+	
   }
 }
 

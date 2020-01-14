@@ -185,6 +185,7 @@ class StateSMTSolver(sygusData: SygusProblemData,
     */
   def checkIsProgramCorrectForInput(s: Op,
                                     testInput: Map[String, Any]): (String, Option[String]) = {
+	Console.println("we're here")									
     val query = templateIsProgramCorrectForInput(s, testInput)
     printQuery("\nQuery checkIsProgramCorrectForInput:\n" + query)
     solver.runSolver(query)
@@ -247,7 +248,9 @@ class StateCDGP(sygusData: SygusProblemData,
 
 
   lazy val singleAnswerFormal: Boolean = isSingleAnswer(sygusData)
-
+  val singleInvocFormal : Boolean = sygusData.singleInvocFormal
+  //Console.println(sygusData.synthTask.uninterpSwimGrammar)
+//  Console.println(sygusData.synthTask.argNames)
   if (!silent)
     printProblemInfo()
 

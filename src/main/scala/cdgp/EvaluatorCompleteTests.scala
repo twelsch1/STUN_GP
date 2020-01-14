@@ -71,10 +71,16 @@ class EvaluatorCompleteTestsDiscrete(domain: RecursiveDomain[Any, Any], state: S
   override def evalTest(s: Op, test: (I, Option[O])): Int = {
     assert(test._2.isDefined, "Trying to evaluate using the domain a test without defined expected output.")
     try {
+		
+       //for STUN check if the input is covered by an ICC, if so we short circuit to 1
+	   //if we do this before finding output, I suspect we will achieve substantial time savings
       val testInput: Map[String, Any] = test._1
       val testOutput: Option[Any] = test._2
       val inputVector = state.synthTask.argNames.map(testInput(_))
+	  
       val output = domain(s)(inputVector)
+	  
+	  
       if (output.isEmpty)
         1 // None means that recurrence depth was exceeded
       else if (output.get == state.convertValue(testOutput.get))

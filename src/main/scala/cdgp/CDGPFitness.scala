@@ -37,6 +37,8 @@ case class FSeqInt(correct: Boolean, value: Seq[Int], progSize: Int)
     coll.setResult("best.isOptimal", correct)
   }
   override def toString: String = s"Fit($correct, $value, progSize=$progSize)"
+  
+  
 }
 
 
@@ -330,8 +332,6 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
       // and a counterexample will be produced (or program will be deemed correct).
       // NOTE: if the program does not pass all test cases, then the probability is high
       // that the produced counterexample will already be in the set of test cases.
-	  //only verify perfect programs by setting to 1.0, this is short circuited if addNewTests is true
-	  //prior to change 2418 solver calls were made... reduced it to 1129, which cut our time in half
       if ((ignoreVerification || !doVerify(evalTests, tests)))
         (false, evalTests)
       else {
