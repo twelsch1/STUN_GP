@@ -287,10 +287,26 @@ class CDGPGenerationalKnobelty[E <: FSeqInt](moves: GPMoves,
                                                  (implicit opt: Options, coll: Collector, rng: TRandom, ordering: Ordering[E])
   extends CDGPGenerationalCore[E](moves, cdgpEval, correct, validTermination) {
   
-  //override def createBreeder(s: StatePop[(Op, E)]) = breeder
   
   def createBreeder(s: StatePop[(Op, E)]): (StatePop[(Op, E)] => StatePop[Op]) = {
 	//we're gonna calculate the counts here...
+	
+	val gram = ListBuffer[Symbol]('ite,'mod,'div,'+,'-,'*,'<,'<=,'>,'>=,'and,'or,'not)
+
+	  for (problemVar <- cdgpState.sygusData.synthTask.argNames)
+		  gram += Symbol(problemVar)
+	
+	val programCounts = ListBuffer[ListBuffer[Int]]()
+	
+	for ((prog,fit) <- s) {
+		val noveltyCount = ListBuffer[Int]()
+		for (sym <- gram)
+			noveltyCount += prog.count(sym)
+		noveltyCount += prog.size - noveltyCount.sum 
+		programCounts += noveltyCount
+	}
+	//Console.println(programCounts)
+	
     val selection = new KnobeltySelection[Op, E]
     SimpleBreeder[Op, E](selection, moves: _*)
 

@@ -22,6 +22,7 @@ trait Fitness {
 
 case class FSeqInt(correct: Boolean, value: Seq[Int], progSize: Int)
   extends Seq[Int] with Fitness {
+
   override def length: Int = value.length
   override def apply(idx: Int) = value(idx)
   override def iterator = value.iterator
