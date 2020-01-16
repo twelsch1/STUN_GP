@@ -221,6 +221,14 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
 	  //Console.println("Evaluation Time: " + evalTime)
 	  totalEvaluationTime = totalEvaluationTime + evalTime
 	  
+	  //alright, forget extinction events for now...
+	  //every n generations, take the best one and start a process that calculates
+	  //the invariant associated with that program with respect to our problemVar
+	  //once this is solved, this predicate is permanently added as an assertion
+	  //to our verification query, and we store this best program
+	  //At the end, when there is a perfect program, we simply unify all pre existing
+	  //components with this program
+	  
 	 /* Grammar('I,Map('I -> List('y1, 'y2, 'y3, 'y4, 'y5, 'k1, ConstantMarker(Int), ('+,('I,'I)), 
 ('-,('I,'I)), ('*,('I_const,'I)), ('div,('I,'I_const)), ('mod,('I,'I_const)), 
 ('ite,('B,'I,'I))), 'I_const -> List(ConstantMarker(Int)), 'B -> List(('=,('I,'I)), 

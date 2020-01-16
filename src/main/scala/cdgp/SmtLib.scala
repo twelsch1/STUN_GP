@@ -5,6 +5,7 @@ import sygus._
 import sygus16.SyGuS16
 
 import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
 
 
@@ -69,6 +70,81 @@ class TemplateVerification(sygusData: SygusProblemData,
                            constraints: Option[Seq[ConstraintCmd]] = None) extends Function1[Op, CheckSatQuery] {
   def createTemplate: String = {
     val constraintsPre = SMTLIBFormatter.getCodeForConstraints(sygusData.precond)
+	//Console.println(constraintsPre)
+    val constraintsPost =
+      if (constraints.isDefined)
+        SMTLIBFormatter.getCodeForMergedConstraints(constraints.get)
+      else if (includeTestConstr)
+        // Rather not useful, because counterexamples cannot be find for test cases (no free vars in function call)
+        // There are, however, some cases in which test can constrain the space of correct programs.
+        SMTLIBFormatter.getCodeForMergedConstraints(sygusData.allConstr)
+      else
+        SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
+	//val tmp = "(>= x y)"
+    val auxiliaries = SMTLIBFormatter.getCodeForAuxiliaries(sygusData.problem)
+
+    s"(set-logic ${SMTLIBFormatter.getLogicName(sygusData.problem)})\n" +
+      (if (timeout > 0) s"(set-option :timeout $timeout)\n" else "") +
+      "(set-option :produce-models true)\n" +
+      auxiliaries + "\n" +
+      "%1$s\n" +  // a place to insert target function definition given the program
+      sygusData.varDecls.map{ v => s"(declare-fun ${v.sym} () ${SMTLIBFormatter.sortToString(v.sortExpr)})"}.mkString("", "\n", "\n") +
+      constraintsPre +
+      s"\n(assert (not $constraintsPost))\n" //+
+	  //s"(assert (not $tmp))\n"
+  }
+  val template: String = createTemplate
+  val satCmds = s"(get-value (${sygusData.varDecls.map(_.sym).mkString(" ")}))\n"
+
+  override def apply(program: Op): CheckSatQuery = {
+    apply(SMTLIBFormatter.opToString(program))
+  }
+
+  def apply(program: String): CheckSatQuery = {
+	//val testInv = "(>= x y)"
+    var code = template.format(sygusData.synthTask.getSynthFunCode(program)) //+
+	//s"\n(assert $testInv)\n" 
+/*
+	val invariants = ListBuffer[String]()
+	invariants += testInv
+	code += "\n"
+	for (inv <- invariants)
+		code += s"(assert (not $inv))\n" */
+	//change code to var, add the assertions here.
+    CheckSatQuery(code, satCmds)
+  }
+}
+
+/**
+  * Produces the input to the solver for verifying if program p is valid wrt
+  * the specification given by problem where the invariant holds.
+  *
+  * An example of the query, note here we assert that the example must come from the space
+  * where x >= y:
+  * <pre>{@code
+  *   (set-logic LIA)
+  *   (define-fun max2 ((x Int)(y Int)) Int (ite (>= x y) x 0))
+  *   (declare-fun x () Int)
+  *   (declare-fun y () Int)
+  *   (assert (not (and (>= (max2 x y) x)
+  *   (>= (max2 x y) y)
+  *   (or (= x (max2 x y)) (= y (max2 x y))))))
+  *   (assert (>= x y))
+  *   (check-sat)
+  *   (get-value (x y))
+  * }</pre>
+  * Sat means that there is a counterexample, unsat means perfect program was found.
+  *
+  * If constraints are provided in the last arguments, then they are used instead of
+  * those originally defined in sygusData.
+  */
+class TemplateInvariantVerification(sygusData: SygusProblemData,
+                           includeTestConstr: Boolean = false,
+                           timeout: Int = 0,
+                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function2[Op, Op, CheckSatQuery] {
+  def createTemplate: String = {
+    val constraintsPre = SMTLIBFormatter.getCodeForConstraints(sygusData.precond)
+	//Console.println(constraintsPre)
     val constraintsPost =
       if (constraints.isDefined)
         SMTLIBFormatter.getCodeForMergedConstraints(constraints.get)
@@ -79,6 +155,7 @@ class TemplateVerification(sygusData: SygusProblemData,
       else
         SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
     val auxiliaries = SMTLIBFormatter.getCodeForAuxiliaries(sygusData.problem)
+
     s"(set-logic ${SMTLIBFormatter.getLogicName(sygusData.problem)})\n" +
       (if (timeout > 0) s"(set-option :timeout $timeout)\n" else "") +
       "(set-option :produce-models true)\n" +
@@ -86,21 +163,97 @@ class TemplateVerification(sygusData: SygusProblemData,
       "%1$s\n" +  // a place to insert target function definition given the program
       sygusData.varDecls.map{ v => s"(declare-fun ${v.sym} () ${SMTLIBFormatter.sortToString(v.sortExpr)})"}.mkString("", "\n", "\n") +
       constraintsPre +
-      s"\n(assert (not $constraintsPost))\n"
+      s"\n(assert (not $constraintsPost))\n" //+
   }
   val template: String = createTemplate
   val satCmds = s"(get-value (${sygusData.varDecls.map(_.sym).mkString(" ")}))\n"
 
-  override def apply(program: Op): CheckSatQuery = {
-    apply(SMTLIBFormatter.opToString(program))
+  override def apply(program: Op, invariant: Op): CheckSatQuery = {
+    apply(SMTLIBFormatter.opToString(program), SMTLIBFormatter.opToString(invariant))
   }
 
-  def apply(program: String): CheckSatQuery = {
-    val code = template.format(sygusData.synthTask.getSynthFunCode(program))
+  def apply(program: String, invariant: String): CheckSatQuery = {
+    var code = template.format(sygusData.synthTask.getSynthFunCode(program)) +
+	s"\n(assert $invariant)\n" 
     CheckSatQuery(code, satCmds)
   }
 }
 
+
+/**
+  * Produces the input to the solver for verifying if program p is valid wrt
+  * the specification given by problem, but we exclude input spaces covered invariants
+  * that correspond to programs that are verifiably correct when those invariants hold.
+  *
+  * An example of the query, note that we now have multiple assertions, in this example
+  * the input space is now covered so we will always return as unsat:
+  * <pre>{@code
+  *   (set-logic LIA)
+  *   (define-fun max2 ((x Int)(y Int)) Int (ite (>= x y) x 0))
+  *   (declare-fun x () Int)
+  *   (declare-fun y () Int)
+  *   (assert (not (and (>= (max2 x y) x)
+  *   (>= (max2 x y) y)
+  *   (or (= x (max2 x y)) (= y (max2 x y))))))
+  *   (assert (not(>= x y)))
+  *   (assert (not(<= x y)))
+  *   (check-sat)
+  *   (get-value (x y))
+  * }</pre>
+  * Sat means that there is a counterexample, unsat means perfect program was found.
+  *
+  * If constraints are provided in the last arguments, then they are used instead of
+  * those originally defined in sygusData.
+  */
+class TemplateSTUNVerification(sygusData: SygusProblemData,
+                           includeTestConstr: Boolean = false,
+                           timeout: Int = 0,
+                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function2[Op, Seq[Op], CheckSatQuery] {
+  def createTemplate: String = {
+    val constraintsPre = SMTLIBFormatter.getCodeForConstraints(sygusData.precond)
+	Console.println(constraintsPre)
+    val constraintsPost =
+      if (constraints.isDefined)
+        SMTLIBFormatter.getCodeForMergedConstraints(constraints.get)
+      else if (includeTestConstr)
+        // Rather not useful, because counterexamples cannot be find for test cases (no free vars in function call)
+        // There are, however, some cases in which test can constrain the space of correct programs.
+        SMTLIBFormatter.getCodeForMergedConstraints(sygusData.allConstr)
+      else
+        SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
+	//val tmp = "(>= x y)"
+    val auxiliaries = SMTLIBFormatter.getCodeForAuxiliaries(sygusData.problem)
+
+    s"(set-logic ${SMTLIBFormatter.getLogicName(sygusData.problem)})\n" +
+      (if (timeout > 0) s"(set-option :timeout $timeout)\n" else "") +
+      "(set-option :produce-models true)\n" +
+      auxiliaries + "\n" +
+      "%1$s\n" +  // a place to insert target function definition given the program
+      sygusData.varDecls.map{ v => s"(declare-fun ${v.sym} () ${SMTLIBFormatter.sortToString(v.sortExpr)})"}.mkString("", "\n", "\n") +
+      constraintsPre +
+      s"\n(assert (not $constraintsPost))\n" //+
+	  //s"(assert (not $tmp))\n"
+  }
+  val template: String = createTemplate
+  val satCmds = s"(get-value (${sygusData.varDecls.map(_.sym).mkString(" ")}))\n"
+
+  override def apply(program: Op, invariants: Seq[Op]): CheckSatQuery = {
+	val invarStrings = ListBuffer[String]()
+	for (inv <- invariants)
+		invarStrings += SMTLIBFormatter.opToString(inv)
+	
+    apply(SMTLIBFormatter.opToString(program), invarStrings)
+  }
+
+  def apply(program: String, invariants: Seq[String]): CheckSatQuery = {
+    var code = template.format(sygusData.synthTask.getSynthFunCode(program))
+	code += "\n"
+	for (inv <- invariants)
+		code += s"(assert (not $inv))\n" 
+
+    CheckSatQuery(code, satCmds)
+  }
+}
 
 
 
