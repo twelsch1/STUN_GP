@@ -361,6 +361,41 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
       }
     }
 	
+	  /** Fitness is always computed on the tests that were flushed. */
+  def fitnessCDGPPredicate(ignoreVerification: Boolean = false, addNewTests: Boolean = true): Op => (Boolean, Seq[Int]) =
+	  (s: Op) => {
+      val tests = state.testsManager.getTests()
+      val evalTests = evalOnTestsAndConstraints(s, tests)
+      // If the program passes all tests i.e. for now, we're going with a tighter fit.
+      // NOTE: if the program does not pass all test cases, then the probability is high
+      // that the produced counterexample will already be in the set of test cases.
+      if ((ignoreVerification || (evalTests.count(_ == 0) == evalTests.size) == tests.size))
+        (false, evalTests)
+      else {
+		val start = System.nanoTime;
+        val (decision, r) = verifySolution(s, evalTests)  //state.verify(s)
+		val end = System.nanoTime;
+		state.verifyTime = state.verifyTime + (end - start) / 1000000000.0
+        if (decision == "unsat" && evalTests.sum == 0 &&
+           (state.sygusData.logic != "SLIA" || evalTests.nonEmpty))  // a guard against bugs in the solver for Strings
+          (true, evalTests) // perfect program found; end of run
+        else if (decision == "sat") {
+          if (state.testsManager.newTests.size < maxNewTestsPerIter) {
+            val newTest = state.createTestFromFailedPredicateVerification(r.get)
+			//Console.println(r.get)
+            if (newTest.isDefined && addNewTests)
+              state.testsManager.addNewTest(newTest.get, allowInputDuplicates=false, allowTestDuplicates=false)
+          }
+          (false, evalTests)
+        }
+        else {
+          // The 'unknown' or 'timeout' solver's decision. Program potentially may be the optimal
+          // solution, but solver is not able to verify this. We proceed by adding no new tests
+          // and treating the program as incorrect.
+          (false, evalTests)
+        }
+      }
+    }
 	
 	
 }
@@ -436,8 +471,24 @@ object EvalDiscrete {
     val ordering = FSeqIntOrdering
     new EvalCDGPDiscrete(state, testsTypesForRatio, ec, ei, es, correct, ordering) {
       override def apply(s: Op, init: Boolean): FSeqInt = {
-		
         val (isPerfect, eval) = fitnessCDGPGeneral(init, state.addNewTests)(s)
+        FSeqInt(isPerfect, eval, s.size)
+      }
+      override def updateEval(s: (Op, FSeqInt)): (Op, FSeqInt) = {
+        val missingTests = state.testsManager.dropFromTests(s._2.totalTests) ++ state.testsManager.newTests.toList
+        (s._1, FSeqInt(s._2.correct, s._2.value ++ evalOnTests(s._1, missingTests), s._1.size))
+      }
+    }
+  }
+  
+    def EvalCDGPPredicateSeqInt(state: StateCDGP, testsTypesForRatio: Set[String])
+                    (implicit opt: Options, coll: Collector): EvalCDGPDiscrete[FSeqInt] = {
+    val (ec, ei, es) = getEvaluators(state)
+    val correct = (e: FSeqInt) => e.correct && e.value.sum == 0
+    val ordering = FSeqIntOrdering
+    new EvalCDGPDiscrete(state, testsTypesForRatio, ec, ei, es, correct, ordering) {
+      override def apply(s: Op, init: Boolean): FSeqInt = {
+        val (isPerfect, eval) = fitnessCDGPPredicate(init, state.addNewTests)(s)
         FSeqInt(isPerfect, eval, s.size)
       }
       override def updateEval(s: (Op, FSeqInt)): (Op, FSeqInt) = {

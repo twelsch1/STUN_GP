@@ -329,7 +329,7 @@ class StateCDGP(sygusData: SygusProblemData,
   def createPredicateTestFromCounterex(model: Map[String, Any]): TestCase[I, O] = {
 		
       try {
-            createCompleteTest(model, Some(1))
+            createCompleteTest(model, Some(false))
       }
       catch {
         case _: Throwable =>
@@ -347,7 +347,7 @@ class StateCDGP(sygusData: SygusProblemData,
 	//note, tests and eval results are same length and have correspondence by index
 	val n = evalResults.length
 	for (i <- 0 until n)
-		predTests += createCompleteTest(testsManager.tests(i)._1, Some(evalResults(i)))
+		predTests += createCompleteTest(testsManager.tests(i)._1, Some(evalResults(i) == 0))
 	
 	testsManager.clearTestsManager()
 	for (test <- predTests)
