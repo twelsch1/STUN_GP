@@ -4,6 +4,7 @@ import fuel.util.{Collector, Options, TRandom}
 import swim.tree.Op
 import sygus.{BoolSortExpr, IntSortExpr, RealSortExpr, SortExpr}
 import sygus16.SyGuS16
+import scala.collection.mutable
 
 
 class NoSolutionException(val badInput: String) extends Exception {
@@ -321,15 +322,66 @@ class StateCDGP(sygusData: SygusProblemData,
       }
     }
   }
+  
+    /**
+    * Creates a complete test consisting of the input and 1, corresponding to test not passed.
+    */
+  def createPredicateTestFromCounterex(model: Map[String, Any]): TestCase[I, O] = {
+		
+      try {
+            createCompleteTest(model, Some(1))
+      }
+      catch {
+        case _: Throwable =>
+          println(s"Exception during executing query or parsing result, returning test with no output! ")
+          IncompleteTestCase(model)
+      }
+    
+  }
+  
+	/**
+	We create new tests from the previously found tests based off how the bsf performed.
+	*/
+    def setPredicateTestsFromBSFTests(evalResults: Seq[Int]) {
+	val predTests = mutable.ArrayBuffer[(I, Option[O])]()
+	//note, tests and eval results are same length and have correspondence by index
+	val n = evalResults.length
+	for (i <- 0 until n)
+		predTests += createCompleteTest(testsManager.tests(i)._1, Some(evalResults(i)))
+	
+	testsManager.clearTestsManager()
+	for (test <- predTests)
+		testsManager.addNewTest(test, allowInputDuplicates=false, allowTestDuplicates=false) 
+	testsManager.flushHelpers()
+  } 
 
   def createTestFromFailedVerification(verOutput: String): Option[TestCase[I, O]] = {
     try {
       // NOTE: should map be used for this? Wouldn't Seq work better?
       val model = GetValueParser(verOutput).toMap // parse model returned by solver
+	  //Console.println(model)
       if (testsManager.tests.contains(model))
         None // this input already was used, there is no use in creating a test case for it
       else
         Some(createTestFromCounterex(model))
+    } catch {
+      case e: NoSolutionException => throw e
+      case e: Throwable =>
+        println(s"Error during creation of counterexample from: $verOutput\nOriginal message: " + e.getMessage)
+        numRejectedCounterex += 1
+        None
+    }
+  }
+  
+    def createTestFromFailedPredicateVerification(verOutput: String): Option[TestCase[I, O]] = {
+    try {
+      // NOTE: should map be used for this? Wouldn't Seq work better?
+      val model = GetValueParser(verOutput).toMap // parse model returned by solver
+	  Console.println(model)
+      if (testsManager.tests.contains(model))
+        None // this input already was used, there is no use in creating a test case for it
+      else
+        Some(createPredicateTestFromCounterex(model))
     } catch {
       case e: NoSolutionException => throw e
       case e: Throwable =>

@@ -38,6 +38,13 @@ class TestsManagerCDGP[I,O](val tests: mutable.ArrayBuffer[(I, Option[O])],
   def getNumberOfKnownOutputs: Int = tests.count{ case (in, out) => out.isDefined}
   def getNumberOfUnknownOutputs: Int = getNumberOfTests - getNumberOfKnownOutputs
 
+  def clearTestsManager() {
+	  flushNo = 0
+	  keysIndex.clear
+	  history.clear
+	  tests.clear
+	  newTests.clear
+  }
   def addNewTests(ts: Seq[(I, Option[O])], allowInputDuplicates: Boolean = true, allowTestDuplicates: Boolean = false) {
     // Remove duplicates within the provided set of tests
     val ts2 = TestsManagerCDGP.removeDuplicates(ts, allowInputDuplicates, allowTestDuplicates)
@@ -54,6 +61,7 @@ class TestsManagerCDGP[I,O](val tests: mutable.ArrayBuffer[(I, Option[O])],
       case (_, false) => if (!isInputInIndex(t) && !newTests.contains(t)) newTests.append(t)
     }
   }
+
 
   def isInputInIndex(t: (I, Option[O]), index: mutable.HashSet[I] = keysIndex): Boolean = keysIndex.contains(t._1)
 
@@ -111,7 +119,7 @@ class TestsManagerCDGP[I,O](val tests: mutable.ArrayBuffer[(I, Option[O])],
 object TestsManagerCDGP {
   def apply[I,O](testsHistory: Boolean = false, printAddedTests: Boolean = false, saveTests: Boolean = false)
                 (implicit opt: Options, rng: TRandom): TestsManagerCDGP[I,O] = {
-    val tests = mutable.ArrayBuffer[(I, Option[O])]()
+    var tests = mutable.ArrayBuffer[(I, Option[O])]()
     val newTests = mutable.ArrayBuffer[(I, Option[O])]()
     new TestsManagerCDGP(tests, newTests, testsHistory, printAddedTests, saveTests)
   }

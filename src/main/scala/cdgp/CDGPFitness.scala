@@ -346,6 +346,7 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
         else if (decision == "sat") {
           if (state.testsManager.newTests.size < maxNewTestsPerIter) {
             val newTest = state.createTestFromFailedVerification(r.get)
+			//Console.println(r.get)
             if (newTest.isDefined && addNewTests)
               state.testsManager.addNewTest(newTest.get, allowInputDuplicates=false, allowTestDuplicates=false)
           }
@@ -359,6 +360,9 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
         }
       }
     }
+	
+	
+	
 }
 
 

@@ -133,6 +133,25 @@ object CDGP {
         val eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio)
         val alg = CDGPGenerationalKnobelty(eval)
         val finalPop = Main.watchTime(alg, RunExperiment(alg))
+		
+		//val n = alg.bsf.bestSoFar._2.size
+		val best = alg.bsf.bestSoFar.get
+		Console.println(state.testsManager.tests)
+		state.setPredicateTestsFromBSFTests(best._2.take(best._2.size))
+		Console.println(state.testsManager.tests)
+		//state.testsManager.tests.clear()
+		//Console.println(state.testsManager.tests)
+		
+		//Console.println(best._2.take(best._2.size))
+		Console.println(coll.getResult("totalGenerations"))
+		
+		//for our new option this becomes a loop where we first run knobelty as normal (albeit with new option,
+		//setting termination explicitly in the core)
+		//terminate after, then run the synthesis loop based off the bsf with a different evaluation 
+		//and potentially different selection i.e. our first check will be knobelty for discovery loop, fitness
+		//for predicate loop. For the synthesis loop we need to change it so that pop size is 500 and threshold
+		//is 1.0 regardless of what is in options initially. First thing's first, create an addNewPredicateTest and
+		//evaluation that calls this. I suppose in there we can have a new fitness that verifies only when 1.0.
         (state, finalPop, alg.bsf.bestSoFar)
 
 
