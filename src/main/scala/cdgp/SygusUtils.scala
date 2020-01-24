@@ -30,9 +30,10 @@ class UnsupportedFeatureException(message: String = "", cause: Throwable = null)
   *     with universally quantified arguments.
   */
 case class SygusProblemData(problem: SyGuS16,
-                            mixedSpecAllowed: Boolean = true) {
+                            mixedSpecAllowed: Boolean = true,
+							predSynth: Boolean = false) {
   private def getSynthTask = {
-    val synthTasks = SygusSynthTask(problem)
+    val synthTasks = SygusSynthTask(problem,predSynth)
     if (synthTasks.size > 1)
       throw new Exception("Multiple synth-fun commands detected. Cannot handle such problems.")
     synthTasks.head
@@ -130,14 +131,19 @@ case class SygusSynthTask(fname: String,
 
 
 object SygusSynthTask {
-  def apply(tree: SyGuS16): List[SygusSynthTask] = {
-    val logic = if (tree.setLogic.isDefined) s"${tree.setLogic.get.id}" else "ALL"
+  def apply(tree: SyGuS16, predSynth: Boolean = false): List[SygusSynthTask] = {
+	//Console.println(tree)
+    var logic = if (tree.setLogic.isDefined) s"${tree.setLogic.get.id}" else "ALL"
     tree.cmds.collect {
       case SynthFunCmd14(sym: String, args: List[(String, SortExpr)], se: SortExpr, ntDefs: List[NTDef]) => {
+		   // Console.println(logic)
         val grammar = SygusUtils.retrieveGrammar(ntDefs)
+		//if (predSynth) logic = "PRED"
+		 //val grammar = SygusUtils.defaultGrammar(logic, args, se)
         SygusSynthTask(sym, args, se, grammar) // name, function syntax, args list, output type
       }
       case SynthFunCmd16(sym: String, args: List[(String, SortExpr)], se: SortExpr) => {
+		//Console.println(logic)
         val grammarSygus = SygusUtils.defaultGrammar(logic, args, se)
         SygusSynthTask(sym, args, se, grammarSygus)
       }
@@ -145,8 +151,10 @@ object SygusSynthTask {
   }
 
   def apply(name: String, vars: Seq[(String, SortExpr)], outputTpe: SortExpr, logic: String): SygusSynthTask = {
+	Console.println(logic)
     val grammar = SygusUtils.defaultGrammar(logic, vars, outputTpe)
     SygusSynthTask(name, vars, outputTpe, grammar)
+	
   }
 }
 
@@ -162,11 +170,13 @@ object SygusUtils {
     vars.filter(_._2 == se).map{ x => Symbol(x._1) }
 
   def defaultGrammar(logic: String, vars: Seq[(String, SortExpr)], se: SortExpr): Seq[(Any, Seq[Any])] = {
+	Console.println("Is this even called?")
     val boolVars = varsForGrammar(vars, BoolSortExpr())
     lazy val bp_int = prodLIA_bool(boolVars)
     lazy val bp_real = prodLRA_bool(boolVars)
     val prods = logic match {
       case "LIA" | "QF_LIA" => List(bp_int, prodLIA(varsForGrammar(vars, IntSortExpr())), constInt)
+	  case "PRED" => List(bp_int, prodLIA_bool(varsForGrammar(vars, IntSortExpr())), constInt)
       case "NIA" | "QF_NIA" => List(bp_int, prodNIA(varsForGrammar(vars, IntSortExpr())))
       case "LRA" | "QF_LRA" => List(bp_real, prodLRA(varsForGrammar(vars, RealSortExpr())), constReal)
       case "NRA" | "QF_NRA" => List(bp_real, prodNRA(varsForGrammar(vars, RealSortExpr())))
@@ -211,7 +221,7 @@ object SygusUtils {
   def constInt: (Any, Seq[Any]) = 'I_const -> Seq(ConstantMarker("Int"))
   def constReal: (Any, Seq[Any]) = 'R_const -> Seq(ConstantMarker("Real"))
   def prodLIA_bool(vars: Seq[Any]): (Any, Seq[Any]) = 'B -> (vars ++ Seq(
-    //true, false, // Never useful
+    //true, false, // Never useful, great...
     '= -> ('I, 'I),
     '< -> ('I, 'I),
     '<= -> ('I, 'I),

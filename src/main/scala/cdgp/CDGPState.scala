@@ -5,6 +5,7 @@ import swim.tree.Op
 import sygus.{BoolSortExpr, IntSortExpr, RealSortExpr, SortExpr}
 import sygus16.SyGuS16
 import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
 
 
 class NoSolutionException(val badInput: String) extends Exception {
@@ -28,7 +29,8 @@ abstract class State(val sygusData: SygusProblemData,
   val sizeTestSet: Option[Int] = opt.getOptionInt("sizeTestSet")
 
   var addNewTests = true
-  
+  //var currentBSF = Op(0)
+  val bsfs = mutable.ListBuffer[Op]()
   var verifyTime = 0.0 
   // Initializing population of test cases
   val (trainingSet, validationSet, testSet) = createTestsSets
@@ -90,7 +92,9 @@ class StateSMTSolver(sygusData: SygusProblemData,
 
 
   // Templates for solver queries
-  lazy val templateVerification = new TemplateVerification(sygusData, timeout = timeout)
+  val templateVerification = new TemplateVerification(sygusData, timeout = timeout)
+  lazy val templatePredicateVerification = new TemplatePredicateVerification(sygusData, timeout = timeout)
+ // Console.println(templatePredicateVerification.getClass)
   lazy val templateIsOutputCorrectForInput = new TemplateIsOutputCorrectForInput(sygusData, timeout = timeout)  // currently not used
   lazy val templateIsProgramCorrectForInput = new TemplateIsProgramCorrectForInput(sygusData, timeout = timeout)
   lazy val templateFindOutput = new TemplateFindOutput(sygusData, timeout = timeout)
@@ -163,11 +167,24 @@ class StateSMTSolver(sygusData: SygusProblemData,
     * Verifies a program with respect to the specification using the provided template.
     */
   def verify(s: Op, template: TemplateVerification): (String, Option[String]) = {
-    val query = template(s)
+    val query = template(s,bsfs)
     printQuery("\nQuery verify:\n" + query)
     solver.runSolver(query)
   }
 
+    /**
+    * Verifies a program with respect to the specification. Model is returned as a raw output from the solver.
+    */
+  def verifyPredicate(s: Op): (String, Option[String]) = verify(s, templateVerification)
+
+  /**
+    * Verifies a program with respect to the specification using the provided template.
+    */
+  def verifyPredicate(s: Op, template: TemplateVerification): (String, Option[String]) = {
+    val query = template(s)
+    printQuery("\nQuery verify:\n" + query)
+    solver.runSolver(query)
+  }
 
   /**
     * Checks, if a particular output is consistent with the specification.
@@ -185,8 +202,7 @@ class StateSMTSolver(sygusData: SygusProblemData,
     * Checks, if a program is correct for the particular test case.
     */
   def checkIsProgramCorrectForInput(s: Op,
-                                    testInput: Map[String, Any]): (String, Option[String]) = {
-	Console.println("we're here")									
+                                    testInput: Map[String, Any]): (String, Option[String]) = {								
     val query = templateIsProgramCorrectForInput(s, testInput)
     printQuery("\nQuery checkIsProgramCorrectForInput:\n" + query)
     solver.runSolver(query)
@@ -346,8 +362,57 @@ class StateCDGP(sygusData: SygusProblemData,
 	val predTests = mutable.ArrayBuffer[(I, Option[O])]()
 	//note, tests and eval results are same length and have correspondence by index
 	val n = evalResults.length
-	for (i <- 0 until n)
+	for (i <- 0 until n) {
+		//val testResult = if (evalResults(i) == 0) 1 else -1
 		predTests += createCompleteTest(testsManager.tests(i)._1, Some(evalResults(i) == 0))
+	}
+	
+	testsManager.clearTestsManager()
+	for (test <- predTests)
+		testsManager.addNewTest(test, allowInputDuplicates=false, allowTestDuplicates=false) 
+	testsManager.flushHelpers()
+  } 
+  
+  def addBSFAndClear(prog: Op, evalResults: Seq[Int], testCarryover: Int = 0) {
+	val uncoveredTests = mutable.ArrayBuffer[(I, Option[O])]()
+	var cap = testCarryover
+	
+	//add prog to our list of bsfs which we query against
+	
+	//for any test we have yet to pass, add to uncoveredTests
+	for (i <- 0 until evalResults.length) {
+		if (evalResults(i) == 1) {
+			uncoveredTests += testsManager.tests(i)
+		}
+	}
+	//clear out previous tests
+	testsManager.clearTestsManager()
+	
+	//if fewer tests left than cap, set cap to length of uncoveredTests
+	if (uncoveredTests.length < testCarryover) cap = uncoveredTests.length
+	
+	//until the cap, add back the uncovered tests
+	for (i <- 0 until cap) {
+		testsManager.addNewTest(uncoveredTests(i), allowInputDuplicates=false, allowTestDuplicates=false) 
+	}
+	testsManager.flushHelpers()
+	
+	bsfs += prog 
+
+	
+  }
+  
+  	/**
+	We create new tests from the previously found tests based off how the bsf performed.
+	*/
+    def setPredicateTestsFromBSFTestsFresh(evalResults: Seq[Int], tests: mutable.ArrayBuffer[(I, Option[O])]) {
+	val predTests = mutable.ArrayBuffer[(I, Option[O])]()
+	//note, tests and eval results are same length and have correspondence by index
+	val n = evalResults.length
+	for (i <- 0 until n) {
+		//val testResult = if (evalResults(i) == 0) 1 else -1
+		predTests += createCompleteTest(tests(i)._1, Some(evalResults(i) == 0))
+	}
 	
 	testsManager.clearTestsManager()
 	for (test <- predTests)
@@ -377,7 +442,7 @@ class StateCDGP(sygusData: SygusProblemData,
     try {
       // NOTE: should map be used for this? Wouldn't Seq work better?
       val model = GetValueParser(verOutput).toMap // parse model returned by solver
-	  Console.println(model)
+	 // Console.println(model)
       if (testsManager.tests.contains(model))
         None // this input already was used, there is no use in creating a test case for it
       else
@@ -402,12 +467,12 @@ class StateCDGP(sygusData: SygusProblemData,
 
 
 object StateCDGP {
-  def apply(benchmark: String)
+  def apply(benchmark: String, predSynth: Boolean = false)
            (implicit opt: Options, coll: Collector, rng: TRandom): StateCDGP =
-    StateCDGP(LoadSygusBenchmark(benchmark))
-  def apply(problem: SyGuS16)
+    StateCDGP(LoadSygusBenchmark(benchmark), predSynth)
+  def apply(problem: SyGuS16, predSynth: Boolean)
            (implicit opt: Options, coll: Collector, rng: TRandom): StateCDGP = {
-    StateCDGP(SygusProblemData(problem, opt('mixedSpecAllowed, true)))
+    StateCDGP(SygusProblemData(problem, opt('mixedSpecAllowed, true),predSynth))
   }
   def apply(problem: SygusProblemData)
            (implicit opt: Options, coll: Collector, rng: TRandom): StateCDGP = {

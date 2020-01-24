@@ -267,6 +267,8 @@ abstract class EvalCDGP[E, EVecEl](state: StateCDGP,
     else
       state.verify(s)
   }
+  
+  
 }
 
 
@@ -369,11 +371,12 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
       // If the program passes all tests i.e. for now, we're going with a tighter fit.
       // NOTE: if the program does not pass all test cases, then the probability is high
       // that the produced counterexample will already be in the set of test cases.
-      if ((ignoreVerification || (evalTests.count(_ == 0) == evalTests.size) == tests.size))
-        (false, evalTests)
+      if (true || (ignoreVerification || (evalTests.count(_ == 0) == evalTests.size) == tests.size))
+      (false, evalTests)
       else {
-		val start = System.nanoTime;
-        val (decision, r) = verifySolution(s, evalTests)  //state.verify(s)
+		(true, evalTests)
+		/*val start = System.nanoTime;
+        val (decision, r) = state.verifyPredicate(s)  //state.verify(s)
 		val end = System.nanoTime;
 		state.verifyTime = state.verifyTime + (end - start) / 1000000000.0
         if (decision == "unsat" && evalTests.sum == 0 &&
@@ -393,7 +396,7 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
           // solution, but solver is not able to verify this. We proceed by adding no new tests
           // and treating the program as incorrect.
           (false, evalTests)
-        }
+        }*/
       }
     }
 	

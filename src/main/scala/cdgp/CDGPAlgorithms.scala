@@ -50,6 +50,7 @@ trait CDGPAlgorithm[S <: Op, E <: Fitness] {
     * be used further in the pipe.
     */
   def updateAfterIteration(s: StatePop[(S, E)]): StatePop[(S, E)] = {
+	  
     pop = Some(s)
 	
 	//Console.println("Verification Time: " + cdgpState.verifyTime)
@@ -193,7 +194,8 @@ class ValidationSetTermination[E](trainingSet: Seq[(Map[String, Any], Option[Any
 abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
                                                   cdgpEval: CDGPFuelEvaluation[Op, E],
                                                   correct: (Op, E) => Boolean,
-                                                  validSetTermination: BestSoFar[Op, E] => Boolean = (s: BestSoFar[Op,E]) => false)
+                                                  validSetTermination: BestSoFar[Op, E] => Boolean = (s: BestSoFar[Op,E]) => false,
+												  maxGenOverride: Int = 0)
                                    (implicit opt: Options, coll: Collector, rng: TRandom, ordering: Ordering[E])
   extends EACore[Op, E](moves, SequentialEval(cdgpEval.eval), correct) with CDGPAlgorithm[Op, E] {
   override def cdgpState = cdgpEval.state
@@ -205,21 +207,22 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
   override def initialize  = RandomStatePop(moves.newSolution _) andThen evaluate andThen updateAfterIteration andThen bsf andThen it
   override def epilogue = super.epilogue andThen reportStats
   override def terminate =
-    Termination(correct) ++ Seq(Termination.MaxIter(it), (s: StatePop[(Op,E)]) => validSetTermination(bsf))
+  if (maxGenOverride == 0) Termination(correct) ++ Seq(Termination.MaxIter(it), (s: StatePop[(Op,E)]) => validSetTermination(bsf))
+  else Termination(correct) ++ Seq(Termination.MaxIter(it,maxGenOverride), (s: StatePop[(Op,E)]) => validSetTermination(bsf))
   //override def evaluate = cdgpEval
     override def evaluate: StatePop[Op] => StatePop[(Op,E)] = 
     (s: StatePop[Op]) => {
-		
-      cdgpEval.state.testsManager.flushHelpers()  //makes sure tests are added
+
+	  cdgpEval.state.testsManager.flushHelpers()  //makes sure tests are added
 	  //cdgpEval.state.addNewTests = false
 	  val evalStart = System.nanoTime 
       val intercept = StatePop(s.map{ op => (op, cdgpEval.eval(op, init=false)) })
 	  
-	  //Console.println("Here is this stupid thing " + intercept(0)._2.getClass)
 	  val evalEnd = System.nanoTime
 	  val evalTime = (evalEnd - evalStart) / 1000000000.0
 	  //Console.println("Evaluation Time: " + evalTime)
 	  totalEvaluationTime = totalEvaluationTime + evalTime
+
 	  
 	  //alright, forget extinction events for now...
 	  //every n generations, take the best one and start a process that calculates
@@ -268,6 +271,8 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
 	  //Console.println(programAndEvals)
 	  intercept
     }
+	
+	
   override def report = bsf
   override def algorithm =
     (s: StatePop[(Op, E)]) =>  Common.restartLoop(initialize, super.algorithm, correct, it, bsf, opt, coll)(s)
@@ -281,9 +286,11 @@ class CDGPGenerationalStaticBreeder[E <: Fitness](moves: GPMoves,
                                                   cdgpEval: CDGPFuelEvaluation[Op, E],
                                                   correct: (Op, E) => Boolean,
                                                   selection: Selection[Op, E],
-                                                  validTermination: BestSoFar[Op, E] => Boolean = (s: BestSoFar[Op,E]) => false)
+                                                  validTermination: BestSoFar[Op, E] => Boolean = (s: BestSoFar[Op,E]) => false,
+												  maxGenOverride: Int = 0
+												  )
                                                  (implicit opt: Options, coll: Collector, rng: TRandom, ordering: Ordering[E])
-  extends CDGPGenerationalCore[E](moves, cdgpEval, correct, validTermination) {
+  extends CDGPGenerationalCore[E](moves, cdgpEval, correct, validTermination,maxGenOverride) {
   val breeder = SimpleBreeder[Op, E](selection, moves: _*)
   override def createBreeder(s: StatePop[(Op, E)]) = breeder
 }
@@ -291,9 +298,10 @@ class CDGPGenerationalStaticBreeder[E <: Fitness](moves: GPMoves,
 class CDGPGenerationalKnobelty[E <: FSeqInt](moves: GPMoves,
                                                   cdgpEval: CDGPFuelEvaluation[Op, E],
                                                   correct: (Op, E) => Boolean,
-                                                  validTermination: BestSoFar[Op, E] => Boolean = (s: BestSoFar[Op,E]) => false)
+                                                  validTermination: BestSoFar[Op, E] => Boolean = (s: BestSoFar[Op,E]) => false,
+												  maxGenOverride: Int = 0)
                                                  (implicit opt: Options, coll: Collector, rng: TRandom, ordering: Ordering[E])
-  extends CDGPGenerationalCore[E](moves, cdgpEval, correct, validTermination) {
+  extends CDGPGenerationalCore[E](moves, cdgpEval, correct, validTermination,maxGenOverride) {
   
   
   def createBreeder(s: StatePop[(Op, E)]): (StatePop[(Op, E)] => StatePop[Op]) = {
@@ -339,18 +347,20 @@ class CDGPGenerationalEpsLexicase[E <: FSeqDouble](moves: GPMoves,
 
 object CDGPGenerationalStaticBreeder {
   def apply[E <: Fitness](cdgpEval: CDGPFuelEvaluation[Op, E], sel: Selection[Op, E],
-                          validTermination: BestSoFar[Op,E] => Boolean = (s: BestSoFar[Op,E]) => false)
+                          validTermination: BestSoFar[Op,E] => Boolean = (s: BestSoFar[Op,E]) => false, maxGenOverride: Int = 0)
                          (implicit opt: Options, coll: Collector, rng: TRandom): CDGPGenerationalStaticBreeder[E] = {
     implicit val ordering = cdgpEval.eval.ordering
     val grammar = cdgpEval.eval.state.sygusData.getSwimGrammar(rng)
     val moves = GPMoves(grammar, Common.isFeasible(cdgpEval.eval.state.synthTask.fname, opt))
     val correct = Common.correct(cdgpEval.eval)
-    new CDGPGenerationalStaticBreeder(moves, cdgpEval, correct, sel, validTermination)
+    new CDGPGenerationalStaticBreeder(moves, cdgpEval, correct, sel, validTermination, maxGenOverride)
   }
 }
 
 
 object CDGPGenerationalTournament {
+	
+	
   def apply[E <: Fitness](eval: EvalFunction[Op, E], validTermination: BestSoFar[Op,E] => Boolean = (s: BestSoFar[Op,E]) => false)
                          (implicit opt: Options, coll: Collector, rng: TRandom): CDGPGenerationalStaticBreeder[E] = {
     val cdgpEval = new CDGPFuelEvaluation[Op, E](eval)
@@ -358,6 +368,48 @@ object CDGPGenerationalTournament {
     CDGPGenerationalStaticBreeder[E](cdgpEval, sel, validTermination)
   }
 }
+
+object CDGPPredicateGenerationalTournament {
+	
+	
+  def apply[E <: Fitness](eval: EvalFunction[Op, E], validTermination: BestSoFar[Op,E] => Boolean = (s: BestSoFar[Op,E]) => false, maxGenOverride: Int = 0 )
+                         (implicit opt: Options, coll: Collector, rng: TRandom): CDGPGenerationalStaticBreeder[E] = {
+    val cdgpEval = new CDGPFuelEvaluation[Op, E](eval)
+    val sel = new TournamentSelection[Op, E](eval.ordering, opt('tournamentSize, 7))
+    CDGPGenerationalStaticBreeder[E](cdgpEval, sel, validTermination, maxGenOverride)
+  }
+}
+
+object CDGPPredicateGenerationalLexicase {
+  def apply[E <: FSeqInt](eval: EvalFunction[Op, E], validTermination: BestSoFar[Op,E] => Boolean = (s: BestSoFar[Op,E]) => false, maxGenOverride: Int = 0)
+                         (implicit opt: Options, coll: Collector, rng: TRandom): CDGPGenerationalStaticBreeder[E] = {
+    
+	val cdgpEval = new CDGPFuelEvaluation[Op, E](eval)
+    val sel = new LexicaseSelection01[Op, E]
+    CDGPGenerationalStaticBreeder[E](cdgpEval, sel, validTermination,maxGenOverride)
+	
+	
+  }
+}
+
+object CDGPPredicateGenerationalKnobelty {
+  def apply[E <: FSeqInt](eval: EvalFunction[Op, E], validTermination: BestSoFar[Op,E] => Boolean = (s: BestSoFar[Op,E]) => false, maxGenOverride: Int = 0)
+                         (implicit opt: Options, coll: Collector, rng: TRandom): CDGPGenerationalKnobelty[E] = {
+    
+	/*val cdgpEval = new CDGPFuelEvaluation[Op, E](eval)
+    val sel = new LexicaseSelection01[Op, E]
+    CDGPGenerationalStaticBreeder[E](cdgpEval, sel, validTermination)
+	*/
+	implicit val ordering = eval.ordering
+    val grammar = eval.state.sygusData.getSwimGrammar(rng)
+    val moves = GPMoves(grammar, Common.isFeasible(eval.state.synthTask.fname, opt))
+    val cdgpEval = new CDGPFuelEvaluation[Op, E](eval)
+    val correct = Common.correct(cdgpEval.eval)
+	new CDGPGenerationalKnobelty(moves, cdgpEval, correct, validTermination,maxGenOverride)
+	
+  }
+}
+
 
 
 object CDGPGenerationalLexicase {

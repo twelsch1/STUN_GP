@@ -108,8 +108,10 @@ object CDGP {
   def runConfigCDGP(benchmark: String, selection: String, evoMode: String)
                    (implicit coll: Collector, opt: Options, rng: TRandom):
   (StateCDGP, Option[StatePop[(Op, Fitness)]], Option[(Op, Fitness)]) = {
+	Console.println(benchmark)
     val state = StateCDGP(benchmark)
     val testsTypesForRatio = opt('testsTypesForRatio, "c,i").split(",").toSet
+
     (selection, evoMode) match {
       case ("tournament", "generational") =>
         val eval = EvalDiscrete.EvalCDGPInt(state, testsTypesForRatio)
@@ -130,29 +132,60 @@ object CDGP {
         (state, finalPop, alg.bsf.bestSoFar)
 		
 	  case ("knobelty", "generational") =>
-        val eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio)
-        val alg = CDGPGenerationalKnobelty(eval)
-        val finalPop = Main.watchTime(alg, RunExperiment(alg))
+        
+		val startTime = System.nanoTime
 		
-		//val n = alg.bsf.bestSoFar._2.size
+		
+		//val genInterval = 20 //to do make this a command line option
+		val genInterval = 20 //let's take a bit of pressure off the SMT
+		var currentGen = genInterval
+		val maxGen = opt("maxGenerations").toInt
+		
+		var eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio)
+		var alg = CDGPPredicateGenerationalLexicase(eval,maxGenOverride=genInterval)
+		//var alg = CDGPPredicateGenerationalLexicase(eval)
+        var finalPop = Main.watchTime(alg, RunExperiment(alg))
+		var correct = false
+		//Console.println(alg.bsf.bestSoFar.get._2.correct)
+		
+	
+		while (currentGen < maxGen && !correct) {
+			
 		val best = alg.bsf.bestSoFar.get
-		Console.println(state.testsManager.tests)
-		state.setPredicateTestsFromBSFTests(best._2.take(best._2.size))
-		Console.println(state.testsManager.tests)
-		//state.testsManager.tests.clear()
-		//Console.println(state.testsManager.tests)
+		val bestProg = best._1
+		val bestProgTests = best._2.take(best._2.size)
+		correct = best._2.correct
 		
-		//Console.println(best._2.take(best._2.size))
-		Console.println(coll.getResult("totalGenerations"))
 		
-		//for our new option this becomes a loop where we first run knobelty as normal (albeit with new option,
-		//setting termination explicitly in the core)
-		//terminate after, then run the synthesis loop based off the bsf with a different evaluation 
-		//and potentially different selection i.e. our first check will be knobelty for discovery loop, fitness
-		//for predicate loop. For the synthesis loop we need to change it so that pop size is 500 and threshold
-		//is 1.0 regardless of what is in options initially. First thing's first, create an addNewPredicateTest and
-		//evaluation that calls this. I suppose in there we can have a new fitness that verifies only when 1.0.
-        (state, finalPop, alg.bsf.bestSoFar)
+		//makes sure we don't go again after a correct program; works but yeah, not the most elegant control flow here
+		if (!correct) {
+		//note, we only add it to the bsfs if not correct, we need to seperate the function where we pass the tests into another
+		//function as this needs to happen each time, fine for now
+		state.addBSFAndClear(bestProg,bestProgTests)
+		
+		eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio)
+		alg = CDGPPredicateGenerationalLexicase(eval,maxGenOverride=genInterval)
+        finalPop = Main.watchTime(alg, RunExperiment(alg))
+		
+		currentGen += genInterval
+		}
+		
+		
+		
+
+		
+		
+		} 
+		
+	  val endTime = System.nanoTime
+	  val timeElapsed = (endTime - startTime) / 1000000000.0
+	  val extraGenerations = coll.getResult("totalGenerations").get
+	  Console.println("Extra gens: " + extraGenerations)
+	  
+	  Console.println("Actually took time: " + timeElapsed)
+	  Console.println("Actually took num generations before extra: " + (currentGen - genInterval))
+
+      (state, finalPop, alg.bsf.bestSoFar)
 
 
       case ("lexicase", "steadyState") =>
