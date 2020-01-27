@@ -1,6 +1,7 @@
 package cdgp
 
 import fuel.util.{Collector, Options, TRandom}
+import fuel.core.StatePop
 import swim.tree.Op
 import sygus.{BoolSortExpr, IntSortExpr, RealSortExpr, SortExpr}
 import sygus16.SyGuS16
@@ -29,8 +30,12 @@ abstract class State(val sygusData: SygusProblemData,
   val sizeTestSet: Option[Int] = opt.getOptionInt("sizeTestSet")
 
   var addNewTests = true
+  var initFromPreviousPopulations = false
+  val previousPopulations = mutable.ListBuffer[StatePop[(Op, Fitness)]]()
   //var currentBSF = Op(0)
   val bsfs = mutable.ListBuffer[Op]()
+  val coveredTests = mutable.ArrayBuffer[(I, Option[O])]()
+  
   var verifyTime = 0.0 
   // Initializing population of test cases
   val (trainingSet, validationSet, testSet) = createTestsSets
@@ -383,6 +388,8 @@ class StateCDGP(sygusData: SygusProblemData,
 	for (i <- 0 until evalResults.length) {
 		if (evalResults(i) == 1) {
 			uncoveredTests += testsManager.tests(i)
+		} else {
+			coveredTests += testsManager.tests(i)
 		}
 	}
 	//clear out previous tests
@@ -402,6 +409,23 @@ class StateCDGP(sygusData: SygusProblemData,
 	
   }
   
+  def coveredToTestSetAndClearBSFs() {
+	testsManager.clearTestsManager()
+			//until the cap, add back the uncovered tests
+	for (test <- coveredTests) {
+		testsManager.addNewTest(test, allowInputDuplicates=false, allowTestDuplicates=false) 
+	}
+	testsManager.flushHelpers()
+	bsfs.clear()
+		
+  }
+  
+  def clearTestsAndBSFs() {
+	testsManager.flushHelpers()
+	testsManager.clearTestsManager()
+	bsfs.clear()
+		
+  }
   	/**
 	We create new tests from the previously found tests based off how the bsf performed.
 	*/

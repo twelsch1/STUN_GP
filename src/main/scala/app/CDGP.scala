@@ -8,6 +8,7 @@ import fuel.util._
 import swim.tree.Op
 import cdgp._
 
+import scala.collection.mutable.ListBuffer
 
 object CDGP {
 
@@ -145,6 +146,8 @@ object CDGP {
 		var alg = CDGPPredicateGenerationalLexicase(eval,maxGenOverride=genInterval)
 		//var alg = CDGPPredicateGenerationalLexicase(eval)
         var finalPop = Main.watchTime(alg, RunExperiment(alg))
+		
+		state.previousPopulations += finalPop.get
 		var correct = false
 		//Console.println(alg.bsf.bestSoFar.get._2.correct)
 		
@@ -158,24 +161,33 @@ object CDGP {
 		
 		
 		//makes sure we don't go again after a correct program; works but yeah, not the most elegant control flow here
-		if (!correct) {
+			if (!correct) {
 		//note, we only add it to the bsfs if not correct, we need to seperate the function where we pass the tests into another
 		//function as this needs to happen each time, fine for now
-		state.addBSFAndClear(bestProg,bestProgTests)
+			state.addBSFAndClear(bestProg,bestProgTests)
 		
-		eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio)
-		alg = CDGPPredicateGenerationalLexicase(eval,maxGenOverride=genInterval)
-        finalPop = Main.watchTime(alg, RunExperiment(alg))
+			eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio)
+			alg = CDGPPredicateGenerationalLexicase(eval,maxGenOverride=genInterval)
+			finalPop = Main.watchTime(alg, RunExperiment(alg))
 		
-		currentGen += genInterval
+			state.previousPopulations += finalPop.get
+			currentGen += genInterval
+			}
+		
 		}
-		
-		
-		
 
+	  
 		
-		
-		} 
+	  /*state.coveredToTestSetAndClearBSFs()
+	  //state.clearTestsAndBSFs()
+	  //state.initFromPreviousPopulations = true
+	  eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio,0.75)
+	  alg = CDGPPredicateGenerationalLexicase(eval)
+      finalPop = Main.watchTime(alg, RunExperiment(alg))
+	 // Console.println(finalPop)
+	  //Console.println(finalPop.get.getClass)
+	  */
+	  //Console.println(state.previousPopulations.length)
 		
 	  val endTime = System.nanoTime
 	  val timeElapsed = (endTime - startTime) / 1000000000.0

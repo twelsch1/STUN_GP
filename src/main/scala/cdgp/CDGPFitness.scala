@@ -17,6 +17,8 @@ trait Fitness {
     * Total number of tests the solution was evaluated on.
     */
   def totalTests: Int
+  
+  def passedTests: Int = 0
 }
 
 
@@ -27,6 +29,7 @@ case class FSeqInt(correct: Boolean, value: Seq[Int], progSize: Int)
   override def apply(idx: Int) = value(idx)
   override def iterator = value.iterator
   override val totalTests: Int = length
+  override val passedTests: Int = this.count(_ == 0)
 
   override def saveInColl(coll: Collector): Unit = {
     val passedTests = if (correct) this.size else this.count(_ == 0)
@@ -180,12 +183,14 @@ abstract class EvalCDGP[E, EVecEl](state: StateCDGP,
                                    val evaluatorIncomplete: EvaluatorIncompleteTests[EVecEl],
                                    val evaluatorSpecial: EvaluatorSpecialTests[EVecEl],
                                    override val correct: E => Boolean,
-                                   override val ordering: Ordering[E])
+                                   override val ordering: Ordering[E],
+								   testsRatioOverride: Double = -1
+								   )
                                   (implicit opt: Options, coll: Collector)
   extends EvalFunction[Op, E](state) {
 
   val maxNewTestsPerIter: Int = opt('maxNewTestsPerIter, Int.MaxValue, (x: Int) => x >= 0)
-  val testsRatio: Double = opt('testsRatio, 1.0, (x: Double) => x >= 0.0 && x <= 1.0)
+  val testsRatio: Double = if (testsRatioOverride > 0) testsRatioOverride else (opt('testsRatio, 1.0, (x: Double) => x >= 0.0 && x <= 1.0))
   val testsMaxDiff: Option[Int] = opt.getOptionInt("testsMaxDiff")
   val partialConstraintsInFitness: Boolean = evaluatorSpecial.partialConstraintsInFitness
   val globalConstraintInFitness: Boolean = evaluatorSpecial.globalConstraintInFitness
@@ -281,9 +286,10 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
                           evaluatorIncomplete: EvaluatorIncompleteTests[Int],
                           evaluatorSpecial: EvaluatorSpecialTests[Int],
                           correct: E => Boolean,
-                          ordering: Ordering[E])
+                          ordering: Ordering[E],
+						  testsRatioOverride: Double = -1)
                          (implicit opt: Options, coll: Collector)
-  extends EvalCDGP[E, Int](state, testsTypesForRatio, evaluatorComplete, evaluatorIncomplete, evaluatorSpecial, correct, ordering) {
+  extends EvalCDGP[E, Int](state, testsTypesForRatio, evaluatorComplete, evaluatorIncomplete, evaluatorSpecial, correct, ordering, testsRatioOverride) {
 
   def fitnessOnlyTestCases: Op => (Boolean, Seq[Int]) =
     (s: Op) => {
@@ -467,12 +473,12 @@ object EvalDiscrete {
   }
 
 
-  def EvalCDGPSeqInt(state: StateCDGP, testsTypesForRatio: Set[String])
+  def EvalCDGPSeqInt(state: StateCDGP, testsTypesForRatio: Set[String], testsRatioOverride: Double = -1.0)
                     (implicit opt: Options, coll: Collector): EvalCDGPDiscrete[FSeqInt] = {
     val (ec, ei, es) = getEvaluators(state)
     val correct = (e: FSeqInt) => e.correct && e.value.sum == 0
     val ordering = FSeqIntOrdering
-    new EvalCDGPDiscrete(state, testsTypesForRatio, ec, ei, es, correct, ordering) {
+    new EvalCDGPDiscrete(state, testsTypesForRatio, ec, ei, es, correct, ordering, testsRatioOverride) {
       override def apply(s: Op, init: Boolean): FSeqInt = {
         val (isPerfect, eval) = fitnessCDGPGeneral(init, state.addNewTests)(s)
         FSeqInt(isPerfect, eval, s.size)
@@ -483,6 +489,8 @@ object EvalDiscrete {
       }
     }
   }
+  
+  
   
     def EvalCDGPPredicateSeqInt(state: StateCDGP, testsTypesForRatio: Set[String])
                     (implicit opt: Options, coll: Collector): EvalCDGPDiscrete[FSeqInt] = {

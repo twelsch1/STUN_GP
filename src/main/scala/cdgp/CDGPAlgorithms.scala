@@ -204,74 +204,71 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
     evaluate andThen
     updateAfterIteration andThen
     bsf)(s)
-  override def initialize  = RandomStatePop(moves.newSolution _) andThen evaluate andThen updateAfterIteration andThen bsf andThen it
+  override def initialize  = 
+  //if (cdgpEval.state.initFromPreviousPopulations) popFromPrevious andThen evaluate andThen updateAfterIteration andThen bsf andThen it
+   RandomStatePop(moves.newSolution _) andThen evaluate andThen updateAfterIteration andThen bsf andThen it
   override def epilogue = super.epilogue andThen reportStats
   override def terminate =
   if (maxGenOverride == 0) Termination(correct) ++ Seq(Termination.MaxIter(it), (s: StatePop[(Op,E)]) => validSetTermination(bsf))
   else Termination(correct) ++ Seq(Termination.MaxIter(it,maxGenOverride), (s: StatePop[(Op,E)]) => validSetTermination(bsf))
   //override def evaluate = cdgpEval
-    override def evaluate: StatePop[Op] => StatePop[(Op,E)] = 
+  override def evaluate: StatePop[Op] => StatePop[(Op,E)] = 
+
     (s: StatePop[Op]) => {
 
+	  var v = s
+	  if (cdgpEval.state.initFromPreviousPopulations) {
+		v = popFromPrevious
+		cdgpEval.state.initFromPreviousPopulations = false
+	  }
 	  cdgpEval.state.testsManager.flushHelpers()  //makes sure tests are added
 	  //cdgpEval.state.addNewTests = false
 	  val evalStart = System.nanoTime 
-      val intercept = StatePop(s.map{ op => (op, cdgpEval.eval(op, init=false)) })
+      val intercept = StatePop(v.map{ op => (op, cdgpEval.eval(op, init=false)) })
 	  
 	  val evalEnd = System.nanoTime
 	  val evalTime = (evalEnd - evalStart) / 1000000000.0
 	  //Console.println("Evaluation Time: " + evalTime)
 	  totalEvaluationTime = totalEvaluationTime + evalTime
-
-	  
-	  //alright, forget extinction events for now...
-	  //every n generations, take the best one and start a process that calculates
-	  //the invariant associated with that program with respect to our problemVar
-	  //once this is solved, this predicate is permanently added as an assertion
-	  //to our verification query, and we store this best program
-	  //At the end, when there is a perfect program, we simply unify all pre existing
-	  //components with this program
-	  
-	 /* Grammar('I,Map('I -> List('y1, 'y2, 'y3, 'y4, 'y5, 'k1, ConstantMarker(Int), ('+,('I,'I)), 
-('-,('I,'I)), ('*,('I_const,'I)), ('div,('I,'I_const)), ('mod,('I,'I_const)), 
-('ite,('B,'I,'I))), 'I_const -> List(ConstantMarker(Int)), 'B -> List(('=,('I,'I)), 
-('<,('I,'I)), ('<=,('I,'I)), ('>,('I,'I)), ('>=,('I,'I)), ('and,('B,'B)), ('or,('B,'B)), ('not,'B)))) */
-	  //val gram = cdgpState.sygusData.synthTask.argNames
-	  
-	 /* val gram = ListBuffer[Symbol]('ite,'mod,'div,'+,'-,'*,'<,'<=,'>,'>=,'and,'or,'not)
-
-	  for (problemVar <- cdgpState.sygusData.synthTask.argNames)
-		  gram += Symbol(problemVar)
-
-	  Console.println(gram)
-	  val check = intercept(0)._1
-	  Console.println(intercept(0)._2)
-	  Console.println(check)
-	  var nonConstCount = 0
-	  for (sym <- gram)
-		  nonConstCount += check.count(sym)
-	  Console.println(nonConstCount)
-	  
-	  */
-	  
-	  //Console.println(intercept(0))
-	  //val programAndEvals = ListBuffer[(Op,E)]()
-	  //programAndEvals += intercept(0)
-	  //val programs = ListBuffer[Op]()
-	  
-	  //cdgpEval.state.addNewTests = true
-	  //for (i <- 0 until 10) {
-		  //programs += intercept(i)._1
-		  //cdgpEval.eval(intercept(i)._1, init=false)
-	  //}
-	 
-	  //following evaluation, update cache with update eval like
-	  //in steady state implementation, and then add our new programs...
-	  
-	  //Console.println(programAndEvals)
 	  intercept
     }
 	
+  
+  def popFromPrevious = {
+	val newPop = ListBuffer[Op]()
+	val popSize = opt('populationSize).toInt
+	val samplePerPop = popSize/cdgpEval.state.previousPopulations.length 
+	
+	val sortedPreviousPopulations = ListBuffer[ListBuffer[(Op, Fitness)]]()
+	
+	//for each in previousPopulations, pull out the pop, sort by fitness,
+	//extract head of list and add to newPop...
+	for (prevPop <- cdgpEval.state.previousPopulations) {
+
+		//sort by tests solved
+		val sortedPop = prevPop.sortWith((a,b) => a._2.passedTests > b._2.passedTests).to[ListBuffer]
+		
+		//until we have enough samples, extract the head
+		for (i <- 0 until samplePerPop) {
+			val top = sortedPop.head
+			sortedPop -= top
+			newPop += top._1
+		}
+		//add to this list in case we need to do the next step
+		sortedPreviousPopulations += sortedPop
+	}
+	
+	
+	//if we do not have a full 1500, we randomly pick a population and extract its head until we do
+	while (newPop.length < popSize) {
+	val popToChoose = rng.nextInt(sortedPreviousPopulations.length)
+	val top = sortedPreviousPopulations(popToChoose).head
+	sortedPreviousPopulations(popToChoose) -= top
+	newPop += top._1
+	}
+	//map the newPop to StatePop and return 
+	StatePop(newPop.map{ op => op})
+  }	  
 	
   override def report = bsf
   override def algorithm =

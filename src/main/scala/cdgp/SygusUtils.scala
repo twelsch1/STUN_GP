@@ -132,18 +132,17 @@ case class SygusSynthTask(fname: String,
 
 object SygusSynthTask {
   def apply(tree: SyGuS16, predSynth: Boolean = false): List[SygusSynthTask] = {
-	//Console.println(tree)
     var logic = if (tree.setLogic.isDefined) s"${tree.setLogic.get.id}" else "ALL"
     tree.cmds.collect {
       case SynthFunCmd14(sym: String, args: List[(String, SortExpr)], se: SortExpr, ntDefs: List[NTDef]) => {
-		   // Console.println(logic)
+		   
         val grammar = SygusUtils.retrieveGrammar(ntDefs)
 		//if (predSynth) logic = "PRED"
 		 //val grammar = SygusUtils.defaultGrammar(logic, args, se)
         SygusSynthTask(sym, args, se, grammar) // name, function syntax, args list, output type
       }
       case SynthFunCmd16(sym: String, args: List[(String, SortExpr)], se: SortExpr) => {
-		//Console.println(logic)
+		
         val grammarSygus = SygusUtils.defaultGrammar(logic, args, se)
         SygusSynthTask(sym, args, se, grammarSygus)
       }
@@ -151,7 +150,6 @@ object SygusSynthTask {
   }
 
   def apply(name: String, vars: Seq[(String, SortExpr)], outputTpe: SortExpr, logic: String): SygusSynthTask = {
-	Console.println(logic)
     val grammar = SygusUtils.defaultGrammar(logic, vars, outputTpe)
     SygusSynthTask(name, vars, outputTpe, grammar)
 	
@@ -170,7 +168,6 @@ object SygusUtils {
     vars.filter(_._2 == se).map{ x => Symbol(x._1) }
 
   def defaultGrammar(logic: String, vars: Seq[(String, SortExpr)], se: SortExpr): Seq[(Any, Seq[Any])] = {
-	Console.println("Is this even called?")
     val boolVars = varsForGrammar(vars, BoolSortExpr())
     lazy val bp_int = prodLIA_bool(boolVars)
     lazy val bp_real = prodLRA_bool(boolVars)
