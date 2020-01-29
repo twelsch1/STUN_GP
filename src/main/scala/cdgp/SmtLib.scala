@@ -67,7 +67,7 @@ object SimplifyQuery {
 class TemplateVerification(sygusData: SygusProblemData,
                            includeTestConstr: Boolean = false,
                            timeout: Int = 0,
-                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function2[Op, Seq[Op], CheckSatQuery] {
+                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function3[Op, Seq[Op], Boolean, CheckSatQuery] {
   def createTemplate(additionalFunctions: Int = 0) : String = {
     val constraintsPre = SMTLIBFormatter.getCodeForConstraints(sygusData.precond)
 	//Console.println("pre " + constraintsPre)
@@ -104,8 +104,10 @@ class TemplateVerification(sygusData: SygusProblemData,
 	  
 	  preBSFs + BSFs + "\n" + postBSFs
   }
+  
  
   val satCmds = s"(get-value (${sygusData.varDecls.map(_.sym).mkString(" ")}))\n"
+
 
 /*
   override def apply(program: Op): CheckSatQuery = {
@@ -128,16 +130,51 @@ class TemplateVerification(sygusData: SygusProblemData,
   } 
   */
   
-    override def apply(program: Op, bsfs: Seq[Op] = ListBuffer[Op]()): CheckSatQuery = {
+ override def apply(program: Op, bsfs: Seq[Op] = ListBuffer[Op](), predSynth: Boolean = false): CheckSatQuery = {
 	val bsfStrings = ListBuffer[String]()
 	for (bsf <- bsfs)
 		bsfStrings += SMTLIBFormatter.opToString(bsf)
 	
-    apply(SMTLIBFormatter.opToString(program), bsfStrings)
+    apply(SMTLIBFormatter.opToString(program), bsfStrings, predSynth)
   }
 
-  def apply(program: String, bsfs: Seq[String]): CheckSatQuery = {
-	  
+  def apply(program: String, bsfs: Seq[String], predSynth: Boolean): CheckSatQuery = {
+	if (predSynth) {
+	val fname = sygusData.synthTask.fname
+	val constraints = SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
+	
+	//we add our arguments for the formatting, first and always present is the current synth fun code 
+	val args = ListBuffer[String]()
+	//add second as the actual fun name arg
+	if (bsfs.length > 1) args += sygusData.synthTask.getSynthFunCode(bsfs(1))
+	//if any more bsfs, add them too
+	for (i <- 2 until bsfs.length) {
+		val synthFunCode = sygusData.synthTask.getSynthFunCode(bsfs(i))
+		//val modSynthFunCode = synthFunCode.replace(fname, fname + "_" + i)
+		//Console.println("Here is the fname " + fname)
+		//Console.println("Here is the mod " + modSynthFunCode)
+		args += synthFunCode.replace(fname, fname + "_" + i)
+	}
+	
+	//get template, now different dependent on number of bsfs
+	
+	val template: String = createTemplate(bsfs.length-2)
+	
+	//unpack our args list for the formatting
+    var code = template.format(args:_*)
+	code += "\n"
+	
+	//finally, we add assertions so that we cannot draw counterexamples where a bsf is true
+	for (i <- 2 until bsfs.length) {
+		val modConstraints = constraints.replace(fname,fname + "_" + i)
+		code += s"(assert (not $modConstraints))\n" 
+	}
+	
+
+	code += s"(assert (= 0 $program))\n"
+
+    CheckSatQuery(code, satCmds)
+	} else {		
 	val fname = sygusData.synthTask.fname
 	val constraints = SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
 	
@@ -168,6 +205,8 @@ class TemplateVerification(sygusData: SygusProblemData,
 	}
 
     CheckSatQuery(code, satCmds)
+	
+	}
   }
 }
 
@@ -210,6 +249,62 @@ class TemplatePredicateVerification(sygusData: SygusProblemData,
     var code = template.format(sygusData.synthTask.getSynthFunCode(program)) +
 	s"\n(assert $invariant)\n" 
     CheckSatQuery(code, satCmds)
+	//so... 
+	//what we are doing presently is defining n functions, and for each of those functions there does not
+	//exist a counter example for the formal specification
+	//what this code was supposed to do was have the program and then assert a predicate that must hold
+	//i.e. further reducing the search space. If it had a counterexample, this was an example where the
+	//program was still incorrect....
+	//now, we want to replace a component (let's say the first) with a predicate that maps to the component
+	//such that where the predicate is true, the component is correct.
+	//To do this, we simply remove the component and replace it with a predicate. Counterexamples then
+	//must be drawn from the space of this predicate. Once the program returns unsat, we know
+	//that this covers the same space as the program would and can use it as a predicate mapping
+	//to the unified version of the program. Question, in theory this means the set of predicates do not
+	//overlap? Any predicate discovered should choose the program if it is correct and ignore it if it is not
+	//correct. 
+	
+	/*
+	Let's say we have 3 bsfs....
+	first iteration is predicate 1 + bsf 2 + bsf 3
+	if this call returns unsat, then bsf 1 is correct where pred 2 holds and bsf 2 and 3 are covering
+	second iteration is not predicate_1 + predicate 2 + bsf 3
+	if this call returns unsat, then bsf 2 is correct where pred 1 does not hold and pred 2 holds 
+	and bsf 3 is covering
+	
+	define prog
+	
+	assert (pred 1) //look for counterexample outside this space, but where bsf 2 and bsf 3 do not cover
+	assert (not (spec on bsf 2)) //bsf 2 must be incorrect to get a counterexample here
+	assert (not (spec on bsf 3)) //bsf 3 must be incorrect to get a counterexample here
+	
+	if unsat then counterexample could not be found space covered by pred 1 and where bsf 2 and bsf 3 are correct...
+	pred 1 can only cover the input space on which bsf 1 is correct, so subsequently...
+	bsf 1 is true where pred 1 holds and bsf 2 and bsf 3 are covering
+	
+	define prog
+	
+	assert (pred 1) //look for counterexample outside this space, but also where pred 2 and bsf 3 do not cover
+	assert (pred 2) //look for counterexample outside this space, but also where pred 1 and bsf 3 do not cover
+	assert (not (spec on bsf 3)) //bsf 3 must be incorrect to get a counterexample here.
+	
+	OK now this makes a lot more sense... so at the end bsf 3 is provably correct when counterexamples
+	cannot be provided from the union of pred 1/pred 2
+	
+	ite (not(or(pred_1,pred_2), bsf_3, ite(pred_2, bsf_2, bsf_1))
+	
+	
+	bsf 3 covers the intersection of pred 1 and 2, then bsf 2 the rest of pred 2, and bsf 1 the rest of pred 1
+	
+	so... the area where a counterexample for bsf 3 can be drawn is where pred 1 and pred 2 are false...
+	
+	
+	if there were 4... it would be
+	
+	ite (and (pred_3,pred_2,pred_1), bsf_4, ite(and(pred_2,pred_1), bsf_3, ite(pred_2, bsf_2, bsf_1)))
+	
+	
+	*/
   }
 }
 

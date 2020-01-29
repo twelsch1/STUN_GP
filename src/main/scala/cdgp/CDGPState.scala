@@ -29,12 +29,19 @@ abstract class State(val sygusData: SygusProblemData,
   val sizeTrainSet: Option[Int] = opt.getOptionInt("sizeTrainSet")
   val sizeTestSet: Option[Int] = opt.getOptionInt("sizeTestSet")
 
+
   var addNewTests = true
   var initFromPreviousPopulations = false
   val previousPopulations = mutable.ListBuffer[StatePop[(Op, Fitness)]]()
   //var currentBSF = Op(0)
   val bsfs = mutable.ListBuffer[Op]()
   val coveredTests = mutable.ArrayBuffer[(I, Option[O])]()
+  
+  val ioTestsByIteration = mutable.ArrayBuffer[mutable.ArrayBuffer[(I, Option[O])]]()
+  val bsfResults = mutable.ArrayBuffer[Seq[Int]]()
+
+  var predicateSynthesis = false
+    
   
   var verifyTime = 0.0 
   // Initializing population of test cases
@@ -84,7 +91,6 @@ class StateSMTSolver(sygusData: SygusProblemData,
                      testsManager: TestsManagerCDGP[Map[String, Any], Any])
                     (implicit opt: Options, coll: Collector, rng: TRandom)
   extends State(sygusData, testsManager) {
-
   // Parameters
   val printQueries = opt('printQueries, false)
   val timeout: Int = opt('solverTimeout, if (opt('solverType, "z3") == "z3") 5000 else 0)
@@ -172,7 +178,7 @@ class StateSMTSolver(sygusData: SygusProblemData,
     * Verifies a program with respect to the specification using the provided template.
     */
   def verify(s: Op, template: TemplateVerification): (String, Option[String]) = {
-    val query = template(s,bsfs)
+    val query = template(s,bsfs,predicateSynthesis)
     printQuery("\nQuery verify:\n" + query)
     solver.runSolver(query)
   }
@@ -257,7 +263,6 @@ class StateCDGP(sygusData: SygusProblemData,
                 testsManager: TestsManagerCDGP[Map[String, Any], Any])
                (implicit opt: Options, coll: Collector, rng: TRandom)
   extends StateSMTSolver(sygusData, testsManager) {
-
   // Parameters
   val regression = opt('regression, false)
   val searchForSecondOutput = opt('searchForSecondOutput, true)
@@ -350,7 +355,7 @@ class StateCDGP(sygusData: SygusProblemData,
   def createPredicateTestFromCounterex(model: Map[String, Any]): TestCase[I, O] = {
 		
       try {
-            createCompleteTest(model, Some(false))
+            createCompleteTest(model, Some(1))
       }
       catch {
         case _: Throwable =>
@@ -363,23 +368,25 @@ class StateCDGP(sygusData: SygusProblemData,
 	/**
 	We create new tests from the previously found tests based off how the bsf performed.
 	*/
-    def setPredicateTestsFromBSFTests(evalResults: Seq[Int]) {
+	/*
+    def setPredicateTestsFromBSFTests(evalResults: Seq[Int], evalTests: mutable.ArrayBuffer[(I, Option[O])] ) {
 	val predTests = mutable.ArrayBuffer[(I, Option[O])]()
 	//note, tests and eval results are same length and have correspondence by index
 	val n = evalResults.length
 	for (i <- 0 until n) {
 		//val testResult = if (evalResults(i) == 0) 1 else -1
-		predTests += createCompleteTest(testsManager.tests(i)._1, Some(evalResults(i) == 0))
+		predTests += createCompleteTest(evalTests(i)._1, Some(evalResults(i) == 0))
 	}
 	
 	testsManager.clearTestsManager()
 	for (test <- predTests)
 		testsManager.addNewTest(test, allowInputDuplicates=false, allowTestDuplicates=false) 
 	testsManager.flushHelpers()
-  } 
+  } */
   
   def addBSFAndClear(prog: Op, evalResults: Seq[Int], testCarryover: Int = 0) {
 	val uncoveredTests = mutable.ArrayBuffer[(I, Option[O])]()
+	val ioTests = mutable.ArrayBuffer[(I, Option[O])]()
 	var cap = testCarryover
 	
 	//add prog to our list of bsfs which we query against
@@ -391,7 +398,14 @@ class StateCDGP(sygusData: SygusProblemData,
 		} else {
 			coveredTests += testsManager.tests(i)
 		}
+		
+		ioTests += testsManager.tests(i)
 	}
+	
+	ioTestsByIteration += ioTests
+	bsfResults += evalResults
+	//add the evalResults to bsfResults
+	
 	//clear out previous tests
 	testsManager.clearTestsManager()
 	
@@ -427,15 +441,15 @@ class StateCDGP(sygusData: SygusProblemData,
 		
   }
   	/**
-	We create new tests from the previously found tests based off how the bsf performed.
+	We create predicate tests from eval results and io tests
 	*/
-    def setPredicateTestsFromBSFTestsFresh(evalResults: Seq[Int], tests: mutable.ArrayBuffer[(I, Option[O])]) {
+    def setPredicateTestsFromBSFTestsFresh(evalResults: Seq[Int], ioTests: mutable.ArrayBuffer[(I, Option[O])]) {
 	val predTests = mutable.ArrayBuffer[(I, Option[O])]()
 	//note, tests and eval results are same length and have correspondence by index
 	val n = evalResults.length
 	for (i <- 0 until n) {
 		//val testResult = if (evalResults(i) == 0) 1 else -1
-		predTests += createCompleteTest(tests(i)._1, Some(evalResults(i) == 0))
+		predTests += createCompleteTest(ioTests(i)._1, Some(evalResults(i)))
 	}
 	
 	testsManager.clearTestsManager()
@@ -492,14 +506,17 @@ class StateCDGP(sygusData: SygusProblemData,
 
 object StateCDGP {
   def apply(benchmark: String, predSynth: Boolean = false)
-           (implicit opt: Options, coll: Collector, rng: TRandom): StateCDGP =
-    StateCDGP(LoadSygusBenchmark(benchmark), predSynth)
+           (implicit opt: Options, coll: Collector, rng: TRandom): StateCDGP = {
+			Console.println("Guten tag")
+		   StateCDGP(LoadSygusBenchmark(benchmark), predSynth) }
   def apply(problem: SyGuS16, predSynth: Boolean)
            (implicit opt: Options, coll: Collector, rng: TRandom): StateCDGP = {
+	Console.println("hi")
     StateCDGP(SygusProblemData(problem, opt('mixedSpecAllowed, true),predSynth))
   }
   def apply(problem: SygusProblemData)
            (implicit opt: Options, coll: Collector, rng: TRandom): StateCDGP = {
+	Console.println("hello")
     val testsManager = TestsManagerCDGP[Map[String, Any], Any]()
     new StateCDGP(problem, testsManager)
   }

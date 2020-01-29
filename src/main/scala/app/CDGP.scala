@@ -158,13 +158,14 @@ object CDGP {
 		val bestProg = best._1
 		val bestProgTests = best._2.take(best._2.size)
 		correct = best._2.correct
+		//we can add it to bsf regardless of if prev generation was correct or not, we just won't deal with one of the bsfs on
+		//the final call
+		state.addBSFAndClear(bestProg,bestProgTests)
 		
 		
 		//makes sure we don't go again after a correct program; works but yeah, not the most elegant control flow here
 			if (!correct) {
-		//note, we only add it to the bsfs if not correct, we need to seperate the function where we pass the tests into another
-		//function as this needs to happen each time, fine for now
-			state.addBSFAndClear(bestProg,bestProgTests)
+			
 		
 			eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio)
 			alg = CDGPPredicateGenerationalLexicase(eval,maxGenOverride=genInterval)
@@ -176,17 +177,29 @@ object CDGP {
 		
 		}
 
-	  
+
+		val ioTestsByIteration = state.ioTestsByIteration
+		val bsfResults = state.bsfResults
 		
-	  /*state.coveredToTestSetAndClearBSFs()
+	    //val predState = StateCDGP(benchmark, true)
+		//Console.println("Is it called again after this?")
+
+		//for some reason, state constructor is called 5 times... predSynth is only sent on 1st
+		//, I have no clue why, this code is bad, bad, bad
+		
+	    //state.setPredicateTestsFromBSFTests()
+		//state.clearTestsAndBSFs()
+		state.predicateSynthesis = true
+		state.setPredicateTestsFromBSFTestsFresh(bsfResults(0),ioTestsByIteration(0))
+	  //state.coveredToTestSetAndClearBSFs()
 	  //state.clearTestsAndBSFs()
 	  //state.initFromPreviousPopulations = true
-	  eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio,0.75)
-	  alg = CDGPPredicateGenerationalLexicase(eval)
-      finalPop = Main.watchTime(alg, RunExperiment(alg))
+	    val predEval = EvalDiscrete.EvalCDGPPredicateSeqInt(state, testsTypesForRatio,0.75)
+	    val predAlg = CDGPPredicateGenerationalLexicase(predEval)
+        val predPop = Main.watchTime(predAlg, RunExperiment(predAlg))
 	 // Console.println(finalPop)
 	  //Console.println(finalPop.get.getClass)
-	  */
+	  
 	  //Console.println(state.previousPopulations.length)
 		
 	  val endTime = System.nanoTime
@@ -198,7 +211,7 @@ object CDGP {
 	  Console.println("Actually took num generations before extra: " + (currentGen - genInterval))
 
       (state, finalPop, alg.bsf.bestSoFar)
-
+		//(predState,predPop, predAlg.bsf.bestSoFar)
 
       case ("lexicase", "steadyState") =>
         val eval = EvalDiscrete.EvalCDGPSeqInt(state, testsTypesForRatio)
