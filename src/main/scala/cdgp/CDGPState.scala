@@ -35,12 +35,13 @@ abstract class State(val sygusData: SygusProblemData,
   val previousPopulations = mutable.ListBuffer[StatePop[(Op, Fitness)]]()
   //var currentBSF = Op(0)
   val bsfs = mutable.ListBuffer[Op]()
+  val assertions = mutable.ListBuffer[Op]()
   val coveredTests = mutable.ArrayBuffer[(I, Option[O])]()
   
   val ioTestsByIteration = mutable.ArrayBuffer[mutable.ArrayBuffer[(I, Option[O])]]()
   val bsfResults = mutable.ArrayBuffer[Seq[Int]]()
 
-  var predicateSynthesis = false
+  var predSynthIndex = -1
     
   
   var verifyTime = 0.0 
@@ -178,7 +179,7 @@ class StateSMTSolver(sygusData: SygusProblemData,
     * Verifies a program with respect to the specification using the provided template.
     */
   def verify(s: Op, template: TemplateVerification): (String, Option[String]) = {
-    val query = template(s,bsfs,predicateSynthesis)
+    val query = template(s,bsfs,predSynthIndex,assertions)
     printQuery("\nQuery verify:\n" + query)
     solver.runSolver(query)
   }
@@ -350,12 +351,13 @@ class StateCDGP(sygusData: SygusProblemData,
   }
   
     /**
-    * Creates a complete test consisting of the input and 1, corresponding to test not passed.
+    * Creates a complete test consisting of the input and 0, i.e. if we get a counterexample during this process
+	* the program should be correct in this space so we set it to 0.
     */
   def createPredicateTestFromCounterex(model: Map[String, Any]): TestCase[I, O] = {
 		
       try {
-            createCompleteTest(model, Some(1))
+            createCompleteTest(model, Some(0))
       }
       catch {
         case _: Throwable =>
@@ -421,6 +423,12 @@ class StateCDGP(sygusData: SygusProblemData,
 	bsfs += prog 
 
 	
+  }
+  
+  def addAssertionAndClear(prog: Op) {
+	  testsManager.flushHelpers()
+	  testsManager.clearTestsManager()
+	  assertions += prog
   }
   
   def coveredToTestSetAndClearBSFs() {

@@ -138,7 +138,8 @@ object CDGP {
 		
 		
 		//val genInterval = 20 //to do make this a command line option
-		val genInterval = 20 //let's take a bit of pressure off the SMT
+		val genInterval = 2 //let's try shorter bursts, more components
+		//but maybe less time to synthesize them
 		var currentGen = genInterval
 		val maxGen = opt("maxGenerations").toInt
 		
@@ -180,36 +181,37 @@ object CDGP {
 
 		val ioTestsByIteration = state.ioTestsByIteration
 		val bsfResults = state.bsfResults
+		Console.println(ioTestsByIteration)
 		
-	    //val predState = StateCDGP(benchmark, true)
-		//Console.println("Is it called again after this?")
+		val unifIterations = bsfResults.length - 1
 
-		//for some reason, state constructor is called 5 times... predSynth is only sent on 1st
-		//, I have no clue why, this code is bad, bad, bad
+		val unifStartTime = System.nanoTime
+		for (i <- 0 until unifIterations) { 
+			state.predSynthIndex = i
+			state.setPredicateTestsFromBSFTestsFresh(bsfResults(i),ioTestsByIteration(i))
+
+			val predEval = EvalDiscrete.EvalCDGPPredicateSeqInt(state, testsTypesForRatio,1.0)
+			val predAlg = CDGPPredicateGenerationalLexicase(predEval)
+			val predPop = Main.watchTime(predAlg, RunExperiment(predAlg))
+			state.addAssertionAndClear(alg.bsf.bestSoFar.get._1)
 		
-	    //state.setPredicateTestsFromBSFTests()
-		//state.clearTestsAndBSFs()
-		state.predicateSynthesis = true
-		state.setPredicateTestsFromBSFTestsFresh(bsfResults(0),ioTestsByIteration(0))
-	  //state.coveredToTestSetAndClearBSFs()
-	  //state.clearTestsAndBSFs()
-	  //state.initFromPreviousPopulations = true
-	    val predEval = EvalDiscrete.EvalCDGPPredicateSeqInt(state, testsTypesForRatio,0.75)
-	    val predAlg = CDGPPredicateGenerationalLexicase(predEval)
-        val predPop = Main.watchTime(predAlg, RunExperiment(predAlg))
+		}
 	 // Console.println(finalPop)
 	  //Console.println(finalPop.get.getClass)
 	  
 	  //Console.println(state.previousPopulations.length)
 		
 	  val endTime = System.nanoTime
+	  val unifTimeElapsed = (endTime - unifStartTime) / 1000000000.0
 	  val timeElapsed = (endTime - startTime) / 1000000000.0
 	  val extraGenerations = coll.getResult("totalGenerations").get
 	  Console.println("Extra gens: " + extraGenerations)
 	  
+	  Console.println("Unification constraints discovered in " + unifTimeElapsed)
 	  Console.println("Actually took time: " + timeElapsed)
 	  Console.println("Actually took num generations before extra: " + (currentGen - genInterval))
 
+	  //Console.println("Solver timeout set to " + opt('solverTimeout))
       (state, finalPop, alg.bsf.bestSoFar)
 		//(predState,predPop, predAlg.bsf.bestSoFar)
 

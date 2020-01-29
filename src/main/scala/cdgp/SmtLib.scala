@@ -67,7 +67,7 @@ object SimplifyQuery {
 class TemplateVerification(sygusData: SygusProblemData,
                            includeTestConstr: Boolean = false,
                            timeout: Int = 0,
-                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function3[Op, Seq[Op], Boolean, CheckSatQuery] {
+                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function4[Op, Seq[Op], Int, Seq[Op], CheckSatQuery] {
   def createTemplate(additionalFunctions: Int = 0) : String = {
     val constraintsPre = SMTLIBFormatter.getCodeForConstraints(sygusData.precond)
 	//Console.println("pre " + constraintsPre)
@@ -130,25 +130,25 @@ class TemplateVerification(sygusData: SygusProblemData,
   } 
   */
   
- override def apply(program: Op, bsfs: Seq[Op] = ListBuffer[Op](), predSynth: Boolean = false): CheckSatQuery = {
+ override def apply(program: Op, bsfs: Seq[Op] = ListBuffer[Op](), predSynth: Int = -1, assertions: Seq[Op] = ListBuffer[Op]()): CheckSatQuery = {
 	val bsfStrings = ListBuffer[String]()
 	for (bsf <- bsfs)
 		bsfStrings += SMTLIBFormatter.opToString(bsf)
 	
-    apply(SMTLIBFormatter.opToString(program), bsfStrings, predSynth)
+    apply(SMTLIBFormatter.opToString(program), bsfStrings, predSynth,assertions)
   }
 
-  def apply(program: String, bsfs: Seq[String], predSynth: Boolean): CheckSatQuery = {
-	if (predSynth) {
+  def apply(program: String, bsfs: Seq[String], predSynth: Integer, assertions: Seq[Op]): CheckSatQuery = {
+	if (predSynth >= 0) {
 	val fname = sygusData.synthTask.fname
 	val constraints = SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
 	
 	//we add our arguments for the formatting, first and always present is the current synth fun code 
 	val args = ListBuffer[String]()
 	//add second as the actual fun name arg
-	if (bsfs.length > 1) args += sygusData.synthTask.getSynthFunCode(bsfs(1))
+	if (bsfs.length-predSynth > 1) args += sygusData.synthTask.getSynthFunCode(bsfs(predSynth+1))
 	//if any more bsfs, add them too
-	for (i <- 2 until bsfs.length) {
+	for (i <- (predSynth + 2) until bsfs.length) {
 		val synthFunCode = sygusData.synthTask.getSynthFunCode(bsfs(i))
 		//val modSynthFunCode = synthFunCode.replace(fname, fname + "_" + i)
 		//Console.println("Here is the fname " + fname)
@@ -158,21 +158,26 @@ class TemplateVerification(sygusData: SygusProblemData,
 	
 	//get template, now different dependent on number of bsfs
 	
-	val template: String = createTemplate(bsfs.length-2)
+	val template: String = createTemplate(bsfs.length-2-predSynth)
 	
 	//unpack our args list for the formatting
     var code = template.format(args:_*)
 	code += "\n"
 	
 	//finally, we add assertions so that we cannot draw counterexamples where a bsf is true
-	for (i <- 2 until bsfs.length) {
+	for (i <- (predSynth + 2) until bsfs.length) {
 		val modConstraints = constraints.replace(fname,fname + "_" + i)
 		code += s"(assert (not $modConstraints))\n" 
 	}
 	
 
-	code += s"(assert (= 0 $program))\n"
-
+	code += s"(assert (not (= 0 $program)))\n"
+	
+	for (assertion <- assertions) {
+		val assertionString = SMTLIBFormatter.opToString(assertion)
+		code += s"(assert (not (= 0 $assertionString)))\n"
+	}
+	//i.e. counterexample cannot come from a region where the predicate holds
     CheckSatQuery(code, satCmds)
 	} else {		
 	val fname = sygusData.synthTask.fname
