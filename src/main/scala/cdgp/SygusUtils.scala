@@ -288,7 +288,6 @@ object SygusUtils {
   }
 
   def getPostcondSymbols(problem: SyGuS16): Set[String] = {
-	Console.println("getPostcondSym")
     val synthFunNames = SygusSynthTask(problem).map(_.fname)
     val dmap = getFunDefDependencyMap(problem)
     getPostcondSymbols(synthFunNames.toSet, dmap)
@@ -302,7 +301,7 @@ object SygusUtils {
     * (c) macros, which themselves contain only elements specified in (a), (b) or (c).
     */
   def getPreconditions(problem: SyGuS16): Seq[ConstraintCmd] = {
-	Console.println("getPrecond")
+
     val postSymbols = getPostcondSymbols(problem)
     problem.cmds.filter{case ConstraintCmd(term) => isPrecondition(term, postSymbols); case _ => false}.
       asInstanceOf[Seq[ConstraintCmd]]
@@ -314,7 +313,7 @@ object SygusUtils {
     * synthesized.
     */
   def getPostconditions(problem: SyGuS16): Seq[ConstraintCmd] = {
-	Console.println("getPostConditions")
+
     val postSymbols = getPostcondSymbols(problem)
     problem.cmds.filter{case ConstraintCmd(term) =>
       !isPrecondition(term, postSymbols); case _ => false}.asInstanceOf[Seq[ConstraintCmd]]
@@ -587,7 +586,7 @@ object SygusUtils {
     * f(x,y) == f(y,x)
     */
   def hasSingleInvocationPropertyAllConstr(problem: SyGuS16): Boolean = {
-	Console.println("Single Inv")
+	//Console.println("Single Inv")
     val sfs = SygusSynthTask(problem)
     val setNames = sfs.map(_.fname).toSet
     val constrCmds = getAllConstraints(problem)
@@ -665,7 +664,7 @@ object SygusUtils {
   }
 
   def checkUnsupportedTermsForGPMode(problem: SyGuS16) {
-	Console.println("checkUns")
+
     val synthFunNames = SygusSynthTask(problem).map(_.fname).toSet
     def checkExpr(term: Term, letVars: Set[String]): Unit = term match {
       case LetTerm(list, t) =>

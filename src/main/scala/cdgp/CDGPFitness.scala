@@ -254,6 +254,8 @@ abstract class EvalCDGP[E, EVecEl](state: StateCDGP,
   def evalOnTests(s: Op, tests: Seq[(I, Option[O])]): Seq[EVecEl] =
     for (test <- tests) yield { evaluateTest(s, test) }
 
+
+//
   /** Evaluates complete or incomplete test. **/
   def evaluateTest(s: Op, test: (I, Option[O])): EVecEl = {
     if (test._2.isDefined) evaluatorComplete.evalTest(s, test)
@@ -264,12 +266,12 @@ abstract class EvalCDGP[E, EVecEl](state: StateCDGP,
   /**
     * Verifies a solution if it is necessary.
     */
-  def verifySolution(s: Op, evalTests: Seq[EVecEl]): (String, Option[String]) = {
-    if (evaluatorSpecial.partialConstraintsInFitness &&
-       !evaluatorSpecial.getPartialConstrSubvector(state)(extractEvalSpecial(evalTests)).contains(evaluatorSpecial.nonpassValue))
+  def verifySolution(s: Op, evalTests: Seq[EVecEl], predCode: Int = 0): (String, Option[String]) = {
+    //if (evaluatorSpecial.partialConstraintsInFitness &&
+      // !evaluatorSpecial.getPartialConstrSubvector(state)(extractEvalSpecial(evalTests)).contains(evaluatorSpecial.nonpassValue))
       // Optimization: if all partial constraints are correct, then the global correctness will also be correct and no counterexample will be found
-     ("unsat", None)
-    else
+     //("unsat", None)
+    //else
       state.verify(s)
   }
   
@@ -374,40 +376,100 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
 	  (s: Op) => {
       val tests = state.testsManager.getTests()
       val evalTests = evalOnTestsAndConstraints(s, tests)
+	  val start = System.nanoTime;
+	  var retBool = false
       // If the program passes the specified ratio of test cases, it will be verified
       // and a counterexample will be produced (or program will be deemed correct).
       // NOTE: if the program does not pass all test cases, then the probability is high
       // that the produced counterexample will already be in the set of test cases.
-      if ((ignoreVerification || !doVerify(evalTests, tests)))
+
+      if ((ignoreVerification || !doVerify(evalTests, tests))) {
         (false, evalTests)
+	  }
       else {
-		val start = System.nanoTime;
-        val (decision, r) = verifySolution(s, evalTests)  //state.verify(s)
+		
+		var model = Map[String, Any]()
+		var output = 0 
+		//we can just do the full verification if we already have max number of tests
+		
+		if (state.testsManager.newTests.size < state.maxPredTests) {
+			val (decisionOne, rOne) = state.verifyPred(s, 1)
+			val (decisionTwo, rTwo) = state.verifyPred(s, 2)
+			//if both are unsat, we are done, if just one is unsat try for the other one,
+			//otherwise we "flip a coin" to pick between the two
+			try {
+			if (decisionOne == "unsat" && decisionTwo == "unsat") {
+				retBool = true
+				(true,evalTests) //perfect 
+			} else if (decisionOne == "sat" && decisionTwo == "unsat") {
+				model = GetValueParser(rOne.get).toMap
+				output = 0
+			} else if (decisionOne == "unsat" && decisionTwo == "sat") {
+				model = GetValueParser(rTwo.get).toMap
+				output = 1
+			} else if (decisionOne == "sat" && decisionTwo == "sat") {
+				val coinFlip = state.randy.nextDouble()
+				val threshold = 0.5
+
+				//do a coin flip to randomize which one to grab, if we encounter a duplicate we'll try the other
+				if (coinFlip < threshold) {
+					model = GetValueParser(rOne.get).toMap
+					output = 0
+					if (state.testsManager.tests.contains(model)) {
+						model = GetValueParser(rTwo.get).toMap
+						output = 1
+					}
+				} else {
+					model = GetValueParser(rTwo.get).toMap
+					output = 1
+					if (state.testsManager.tests.contains(model)) {
+						model = GetValueParser(rOne.get).toMap
+						output = 0
+					}
+				}
+			
+			}
+			
+			 } catch {
+				 case e: Throwable => Console.println("Ran into parser error")
+			 }
+			
+			/*if (model.isEmpty) {
+				Console.println("The model was empty, here are the decisions " + decision + " " + decisionOne + " " + decisionTwo)
+				(false, evalTests)
+			}*/
+			
+			if (!state.testsManager.tests.contains(model) && !model.isEmpty) {
+				state.testsManager.addNewTest(state.createCompleteTest(model,Some(output)), allowInputDuplicates=false, allowTestDuplicates=false)
+			} 
+			
+					
+		} else {
+				
+				
+		   val (decision, r) = state.verifyPred(s, 0)  //if we don't need any more tests, we just check for unsat in one call
+			if (decision == "unsat" && evalTests.sum == 0 &&
+			(state.sygusData.logic != "SLIA" || evalTests.nonEmpty)) {
+				retBool = true
+				(true,evalTests) //perfect program found; end of run
+			} else {
+				 (false,evalTests)
+			}
+			
+		}
+
 		val end = System.nanoTime;
+		
 		state.verifyTime = state.verifyTime + (end - start) / 1000000000.0
-        if (decision == "unsat" && evalTests.sum == 0 &&
-           (state.sygusData.logic != "SLIA" || evalTests.nonEmpty))  // a guard against bugs in the solver for Strings
-          (true, evalTests) // perfect program found; end of run
-        else if (decision == "sat") {
-          if (state.testsManager.newTests.size < maxNewTestsPerIter) {
-            val newTest = state.createTestFromFailedPredicateVerification(r.get)
-			//Console.println(r.get)
-            if (newTest.isDefined && addNewTests)
-              state.testsManager.addNewTest(newTest.get, allowInputDuplicates=false, allowTestDuplicates=false)
-          }
-          (false, evalTests)
-        }
-        else {
-          // The 'unknown' or 'timeout' solver's decision. Program potentially may be the optimal
-          // solution, but solver is not able to verify this. We proceed by adding no new tests
-          // and treating the program as incorrect.
-          (false, evalTests)
-        }
-      }
+		(retBool,evalTests)
+		
+		
     }
 	
 	
-}
+	}
+
+  }
 
 
 

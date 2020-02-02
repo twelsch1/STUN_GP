@@ -137,8 +137,8 @@ object CDGP {
 		val startTime = System.nanoTime
 		
 		
-		//val genInterval = 20 //to do make this a command line option
-		val genInterval = 2 //let's try shorter bursts, more components
+		val genInterval = 2 //to do make this a command line option
+
 		//but maybe less time to synthesize them
 		var currentGen = genInterval
 		val maxGen = opt("maxGenerations").toInt
@@ -178,29 +178,73 @@ object CDGP {
 		
 		}
 
-
+		//makes sure we don't have any redundant programs that will mess up the predicate synthesis
+		Console.println("Before we had " + state.bsfs.length)
+		state.ensureDistinctBSFs()
+		Console.println("Now we have " + state.bsfs.length)
+		val (myDec,_) = state.verifyDistinctBSF(state.bsfs)
+		
+		//so there exists no counterexamples, these can be unified to cover
+		
+		Console.println("After distinct bsfs the decision is " + myDec)
+/*
 		val ioTestsByIteration = state.ioTestsByIteration
 		val bsfResults = state.bsfResults
-		Console.println(ioTestsByIteration)
+		Console.println(ioTestsByIteration) */
 		
-		val unifIterations = bsfResults.length - 1
-
+		val unifIterations = state.bsfs.length
+		//val unifIterations = 1
+		
 		val unifStartTime = System.nanoTime
-		for (i <- 0 until unifIterations) { 
+		var max = -1.0
+		
+		//so why isn't this working?
+		//where can the counterexample be?
+		for (i <- 1 until unifIterations) { 
+		val iterStartTime = System.nanoTime
 			state.predSynthIndex = i
-			state.setPredicateTestsFromBSFTestsFresh(bsfResults(i),ioTestsByIteration(i))
-
-			val predEval = EvalDiscrete.EvalCDGPPredicateSeqInt(state, testsTypesForRatio,1.0)
-			val predAlg = CDGPPredicateGenerationalLexicase(predEval)
-			val predPop = Main.watchTime(predAlg, RunExperiment(predAlg))
-			state.addAssertionAndClear(alg.bsf.bestSoFar.get._1)
+			//state.setPredicateTestsFromBSFTestsFresh(bsfResults(i),ioTestsByIteration(i)) //for now just clears...
+			//state.clearTests()
+		state.currentBSF = state.bsfs(i)
+			//let's hope this works better...
+		var keepGoing = true
+		var assertion = Op(0)
+		while (keepGoing) {
+		val predEval = EvalDiscrete.EvalCDGPPredicateSeqInt(state, testsTypesForRatio,0.75)
+		val predAlg = CDGPPredicateGenerationalLexicase(predEval,maxGenOverride=40)
+		val predPop = Main.watchTime(predAlg, RunExperiment(predAlg))
+		
+		val (predSynthesized, _) = state.verify(predAlg.bsf.bestSoFar.get._1)
+		if (predSynthesized == "unsat") {
+			keepGoing = false
+			assertion = predAlg.bsf.bestSoFar.get._1
+		}
 		
 		}
-	 // Console.println(finalPop)
-	  //Console.println(finalPop.get.getClass)
-	  
-	  //Console.println(state.previousPopulations.length)
 		
+		
+		state.addAssertionAndClear(assertion)
+		
+		val iterEndTime = System.nanoTime
+		val iterTimeElapsed = (iterEndTime - iterStartTime) / 1000000000.0
+		
+		if (iterTimeElapsed > max) max = iterTimeElapsed
+		
+		Console.println("finished iteration " + (i) + " of " + (unifIterations-1) + " in " + iterTimeElapsed)
+		
+		}
+     val (dec, _) = state.finishTheFight()
+     if (dec == "unsat") { 
+	 Console.println("We win") 
+	 Console.println(state.getUnifiedProgram())
+	 }
+	 else {
+		 Console.println("Uh oh")
+		 Console.println(state.getUnifiedProgram())
+	 }
+
+
+	  Console.println("Max iteration time " + max)
 	  val endTime = System.nanoTime
 	  val unifTimeElapsed = (endTime - unifStartTime) / 1000000000.0
 	  val timeElapsed = (endTime - startTime) / 1000000000.0
@@ -356,3 +400,6 @@ object CDGP {
   }
 
 }
+
+  
+

@@ -67,8 +67,8 @@ object SimplifyQuery {
 class TemplateVerification(sygusData: SygusProblemData,
                            includeTestConstr: Boolean = false,
                            timeout: Int = 0,
-                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function4[Op, Seq[Op], Int, Seq[Op], CheckSatQuery] {
-  def createTemplate(additionalFunctions: Int = 0) : String = {
+                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function5[Op, Seq[Op], Int, Seq[Op], Int, CheckSatQuery] {
+  def createTemplate(additionalFunctions: Int = 0, predSynth: Int = -1) : String = {
     val constraintsPre = SMTLIBFormatter.getCodeForConstraints(sygusData.precond)
 	//Console.println("pre " + constraintsPre)
     val constraintsPost =
@@ -92,92 +92,99 @@ class TemplateVerification(sygusData: SygusProblemData,
       auxiliaries + "\n" +
       "%1$s\n"  // a place to insert target function definition given the program
       
-	
+	var BSFs = ""
 	val BSFsHelper = ListBuffer[String]()
 	for (i <- 0 until additionalFunctions) BSFsHelper += "%" + (i+2) + "$s"
-	val BSFs = BSFsHelper.mkString("\n")
+	BSFs = BSFsHelper.mkString("\n")
 	
-	val postBSFs = sygusData.varDecls.map{ v => s"(declare-fun ${v.sym} () ${SMTLIBFormatter.sortToString(v.sortExpr)})"}.mkString("", "\n", "\n") +
-      constraintsPre +
-      s"\n(assert (not $constraintsPost))\n" //+
-	  //s"(assert (not $tmp))\n"
+	
+	var postBSFs = sygusData.varDecls.map{ v => s"(declare-fun ${v.sym} () ${SMTLIBFormatter.sortToString(v.sortExpr)})"}.mkString("", "\n", "\n") +
+      constraintsPre
+	if (predSynth < 0) postBSFs += s"\n(assert (not $constraintsPost))\n" //+
 	  
-	  preBSFs + BSFs + "\n" + postBSFs
+	  //s"(assert (not $tmp))\n"
+	//Console.println("These are the post constraints... " + constraintsPost)
+	val retVal = preBSFs + BSFs + "\n" + postBSFs
+	//Console.println(retVal)
+	retVal
   }
   
  
   val satCmds = s"(get-value (${sygusData.varDecls.map(_.sym).mkString(" ")}))\n"
 
-
-/*
-  override def apply(program: Op): CheckSatQuery = {
-    apply(SMTLIBFormatter.opToString(program))
-  }
-
-
-  def apply(program: String): CheckSatQuery = {
-	//val testInv = "(>= x y)"
-    var code = template.format(sygusData.synthTask.getSynthFunCode(program)) //+
-	//s"\n(assert $testInv)\n" 
-
-	val invariants = ListBuffer[String]()
-	invariants += testInv
-	code += "\n"
-	for (inv <- invariants)
-		code += s"(assert (not $inv))\n" 
-	//change code to var, add the assertions here.
-    CheckSatQuery(code, satCmds)
-  } 
-  */
-  
- override def apply(program: Op, bsfs: Seq[Op] = ListBuffer[Op](), predSynth: Int = -1, assertions: Seq[Op] = ListBuffer[Op]()): CheckSatQuery = {
+ override def apply(program: Op, bsfs: Seq[Op] = ListBuffer[Op](), predSynth: Int = -1, assertions: Seq[Op] = ListBuffer[Op](), predCode: Int = 0): CheckSatQuery = {
 	val bsfStrings = ListBuffer[String]()
 	for (bsf <- bsfs)
 		bsfStrings += SMTLIBFormatter.opToString(bsf)
 	
-    apply(SMTLIBFormatter.opToString(program), bsfStrings, predSynth,assertions)
+    apply(SMTLIBFormatter.opToString(program), bsfStrings, predSynth,assertions, predCode)
   }
 
-  def apply(program: String, bsfs: Seq[String], predSynth: Integer, assertions: Seq[Op]): CheckSatQuery = {
+  def apply(program: String, bsfs: Seq[String], predSynth: Int, assertions: Seq[Op], predCode: Int): CheckSatQuery = {
 	if (predSynth >= 0) {
 	val fname = sygusData.synthTask.fname
 	val constraints = SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
 	
+	/*
 	//we add our arguments for the formatting, first and always present is the current synth fun code 
 	val args = ListBuffer[String]()
-	//add second as the actual fun name arg
-	if (bsfs.length-predSynth > 1) args += sygusData.synthTask.getSynthFunCode(bsfs(predSynth+1))
+	//add currentBSF as the actual fun
+	args += sygusData.synthTask.getSynthFunCode(bsfs(predSynth))
 	//if any more bsfs, add them too
-	for (i <- (predSynth + 2) until bsfs.length) {
+
+	for (i <- 0 until bsfs.length) {
+		
+		if (i != predSynth) {
 		val synthFunCode = sygusData.synthTask.getSynthFunCode(bsfs(i))
-		//val modSynthFunCode = synthFunCode.replace(fname, fname + "_" + i)
-		//Console.println("Here is the fname " + fname)
-		//Console.println("Here is the mod " + modSynthFunCode)
 		args += synthFunCode.replace(fname, fname + "_" + i)
+		}
 	}
+	val template: String = createTemplate(bsfs.length-1, predSynth)
 	
 	//get template, now different dependent on number of bsfs
-	
-	val template: String = createTemplate(bsfs.length-2-predSynth)
-	
-	//unpack our args list for the formatting
-    var code = template.format(args:_*)
-	code += "\n"
-	
-	//finally, we add assertions so that we cannot draw counterexamples where a bsf is true
-	for (i <- (predSynth + 2) until bsfs.length) {
-		val modConstraints = constraints.replace(fname,fname + "_" + i)
-		code += s"(assert (not $modConstraints))\n" 
-	}
+	//new verification defines first bsf as prog to check, and then remaining bsfs as those against
+	var code = template.format(args:_*)
+
+
 	
 
-	code += s"(assert (not (= 0 $program)))\n"
+	var cover = ""
 	
-	for (assertion <- assertions) {
-		val assertionString = SMTLIBFormatter.opToString(assertion)
-		code += s"(assert (not (= 0 $assertionString)))\n"
+	//if ((predSynth+1) == bsfs.length) cover = "
+	//finally, we add assertions so that we cannot draw counterexamples where a bsf is true
+	for (i <- 0 until bsfs.length) {
+		if (i != predSynth) {
+		val modConstraints = constraints.replace(fname,fname + "_" + i)
+		cover += s" (not $modConstraints) " 
+		}
 	}
-	//i.e. counterexample cannot come from a region where the predicate holds
+	
+	//if code is 0, check both sides, if code is 1 returns sat where predicate missasigns to cover and unsat otherwise
+	//if code is 2 returns sat where predicates misassigns to currentBSF and unsat otherwise
+
+	if (predCode == 0) code += s"(assert(ite (= 0 $program) (not $constraints) (and $cover )))\n  "
+	else if (predCode == 1) code += s"(assert(ite (= 0 $program) false (and $cover )))\n  "
+	else if (predCode == 2) code += s"(assert(ite (= 0 $program) (not $constraints) false))\n  "
+	*/
+
+
+	//code below is for the max version... let's see how much faster it is for max5, figure out the property,
+	//and prove that we can allow the above for this property and choose the below when said property is not present.
+	
+	val template: String = createTemplate(0, predSynth)
+	
+    //unpack our args list for the formatting
+    var code = template.format(sygusData.synthTask.getSynthFunCode(bsfs(predSynth)))
+	code += "\n"
+ 
+	code += "\n"
+	
+	if (predCode == 0) code += s"(assert(ite (= 0 $program) (not $constraints) $constraints))\n  "
+	else if (predCode == 1) code += s"(assert(ite (= 0 $program) false $constraints ))\n  "
+	else if (predCode == 2) code += s"(assert(ite (= 0 $program) (not $constraints) false))\n  "
+	
+	
+
     CheckSatQuery(code, satCmds)
 	} else {		
 	val fname = sygusData.synthTask.fname
@@ -215,103 +222,176 @@ class TemplateVerification(sygusData: SygusProblemData,
   }
 }
 
+/**
+Returns sat if passed in BSFs cover, used to ensure bsfs cover distinct areas of the input space
+*/
 
-class TemplatePredicateVerification(sygusData: SygusProblemData,
+class TemplateBSFCheck(sygusData: SygusProblemData,
                            includeTestConstr: Boolean = false,
                            timeout: Int = 0,
-                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function2[Op, Op, CheckSatQuery] {
-  def createTemplate: String = {
+                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function1[Seq[Op], CheckSatQuery] {
+  def createTemplate(additionalFunctions: Int = 0) : String = {
     val constraintsPre = SMTLIBFormatter.getCodeForConstraints(sygusData.precond)
-	//Console.println(constraintsPre)
+
     val constraintsPost =
-      if (constraints.isDefined)
+      if (constraints.isDefined) {
         SMTLIBFormatter.getCodeForMergedConstraints(constraints.get)
+	  }
+      else if (includeTestConstr)
+        SMTLIBFormatter.getCodeForMergedConstraints(sygusData.allConstr)
+      else {
+        SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
+	  }
+	
+    val auxiliaries = SMTLIBFormatter.getCodeForAuxiliaries(sygusData.problem)
+	
+
+    val preBSFs = s"(set-logic ${SMTLIBFormatter.getLogicName(sygusData.problem)})\n" +
+      (if (timeout > 0) s"(set-option :timeout $timeout)\n" else "") +
+      "(set-option :produce-models true)\n" +
+      auxiliaries + "\n"
+      
+	
+	val BSFsHelper = ListBuffer[String]()
+	for (i <- 0 until additionalFunctions) BSFsHelper += "%" + (i+1) + "$s"
+	val BSFs = BSFsHelper.mkString("\n")
+	
+	var postBSFs = sygusData.varDecls.map{ v => s"(declare-fun ${v.sym} () ${SMTLIBFormatter.sortToString(v.sortExpr)})"}.mkString("", "\n", "\n") +
+      constraintsPre
+	
+	  
+	preBSFs + BSFs + "\n" + postBSFs
+  }
+  
+ 
+  val satCmds = s"(get-value (${sygusData.varDecls.map(_.sym).mkString(" ")}))\n"
+
+ override def apply(bsfs: Seq[Op] = ListBuffer[Op]()): CheckSatQuery = {
+	val bsfStrings = ListBuffer[String]()
+	for (bsf <- bsfs)
+		bsfStrings += SMTLIBFormatter.opToString(bsf)
+	
+    applyS(bsfStrings)
+  }
+
+  def applyS(bsfs: Seq[String]): CheckSatQuery = {
+	val fname = sygusData.synthTask.fname
+	val constraints = SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
+	
+	//we add our arguments for the formatting, first and always present is the current synth fun code 
+	val args = ListBuffer[String]()
+	//add the bsfs to args
+	for (i <- 0 until bsfs.length) {
+		val synthFunCode = sygusData.synthTask.getSynthFunCode(bsfs(i))
+		args += synthFunCode.replace(fname, fname + "_" + i)
+	}
+	
+	val template: String = createTemplate(bsfs.length)
+	
+	//unpack our args list for the formatting
+    var code = template.format(args:_*)
+	code += "\n"
+
+	var cover = ""
+	
+	for (i <- 0 until bsfs.length) {
+		val modConstraints = constraints.replace(fname,fname + "_" + i)
+		code += s"(assert (not $modConstraints))\n" 	
+	}
+
+    CheckSatQuery(code, satCmds)
+	
+  }
+}
+
+/**
+Similar to the above, this is where our unification procedure occurs
+*/
+class TemplateFinalVerification(sygusData: SygusProblemData,
+                           includeTestConstr: Boolean = false,
+                           timeout: Int = 0,
+                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function2[Seq[Op], Seq[Op], CheckSatQuery] {
+  def createTemplate() : String = {
+    val constraintsPre = SMTLIBFormatter.getCodeForConstraints(sygusData.precond)
+    val constraintsPost =
+      if (constraints.isDefined) {
+        SMTLIBFormatter.getCodeForMergedConstraints(constraints.get)
+	  }
       else if (includeTestConstr)
         // Rather not useful, because counterexamples cannot be find for test cases (no free vars in function call)
         // There are, however, some cases in which test can constrain the space of correct programs.
         SMTLIBFormatter.getCodeForMergedConstraints(sygusData.allConstr)
-      else
+      else {
         SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
+	  }
     val auxiliaries = SMTLIBFormatter.getCodeForAuxiliaries(sygusData.problem)
 
-    s"(set-logic ${SMTLIBFormatter.getLogicName(sygusData.problem)})\n" +
+
+    val preSection = s"(set-logic ${SMTLIBFormatter.getLogicName(sygusData.problem)})\n" +
       (if (timeout > 0) s"(set-option :timeout $timeout)\n" else "") +
       "(set-option :produce-models true)\n" +
       auxiliaries + "\n" +
-      "%1$s\n" +  // a place to insert target function definition given the program
-      sygusData.varDecls.map{ v => s"(declare-fun ${v.sym} () ${SMTLIBFormatter.sortToString(v.sortExpr)})"}.mkString("", "\n", "\n") +
+      "%1$s\n"  // a place to insert target function definition given the program
+      
+	
+	
+	var postSection = sygusData.varDecls.map{ v => s"(declare-fun ${v.sym} () ${SMTLIBFormatter.sortToString(v.sortExpr)})"}.mkString("", "\n", "\n") +
       constraintsPre +
-      s"\n(assert (not $constraintsPost))\n" //+
+	 s"\n(assert (not $constraintsPost))\n" //+
+	 
+	val retVal = preSection + postSection
+	//Console.println(retVal)
+	retVal
   }
-  val template: String = createTemplate
+  
+ 
   val satCmds = s"(get-value (${sygusData.varDecls.map(_.sym).mkString(" ")}))\n"
 
-  override def apply(program: Op, invariant: Op): CheckSatQuery = {
-    apply(SMTLIBFormatter.opToString(program), SMTLIBFormatter.opToString(invariant))
+  val template: String = createTemplate
+  
+  //unify the program and return
+  def getFinalFunctionDefinition(bsfs: Seq[Op] = ListBuffer[Op](), assertions: Seq[Op] = ListBuffer[Op]()) : String =  
+  sygusData.synthTask.getSynthFunCode(getFinalProgram(bsfs,assertions))
+  
+  def getFinalProgram(bsfs: Seq[Op] = ListBuffer[Op](), assertions: Seq[Op] = ListBuffer[Op]()) : String = {
+	
+	var unifiedProg = ""
+	for (i <- ((assertions.length-1) to 0 by -1)) {
+		 val assertion = SMTLIBFormatter.opToString(assertions(i))
+		 val prog = SMTLIBFormatter.opToString(bsfs(i+1))
+		 unifiedProg += s"(ite ( = 0 $assertion) $prog "
+	 }
+	 val elseProg = SMTLIBFormatter.opToString(bsfs(0))
+     unifiedProg += s" $elseProg"
+	 for (i <- 0 until assertions.length)
+		 unifiedProg += ")"
+	 
+	unifiedProg
+	
+  }
+  
+ override def apply(bsfs: Seq[Op] = ListBuffer[Op](), assertions: Seq[Op] = ListBuffer[Op]()): CheckSatQuery = {
+	
+    finishIt(getFinalFunctionDefinition(bsfs,assertions))
   }
 
-  def apply(program: String, invariant: String): CheckSatQuery = {
-    var code = template.format(sygusData.synthTask.getSynthFunCode(program)) +
-	s"\n(assert $invariant)\n" 
-    CheckSatQuery(code, satCmds)
-	//so... 
-	//what we are doing presently is defining n functions, and for each of those functions there does not
-	//exist a counter example for the formal specification
-	//what this code was supposed to do was have the program and then assert a predicate that must hold
-	//i.e. further reducing the search space. If it had a counterexample, this was an example where the
-	//program was still incorrect....
-	//now, we want to replace a component (let's say the first) with a predicate that maps to the component
-	//such that where the predicate is true, the component is correct.
-	//To do this, we simply remove the component and replace it with a predicate. Counterexamples then
-	//must be drawn from the space of this predicate. Once the program returns unsat, we know
-	//that this covers the same space as the program would and can use it as a predicate mapping
-	//to the unified version of the program. Question, in theory this means the set of predicates do not
-	//overlap? Any predicate discovered should choose the program if it is correct and ignore it if it is not
-	//correct. 
+  def finishIt(finalProgram : String): CheckSatQuery = {
+	  
+	 
+	var code = template.format(finalProgram)
 	
-	/*
-	Let's say we have 3 bsfs....
-	first iteration is predicate 1 + bsf 2 + bsf 3
-	if this call returns unsat, then bsf 1 is correct where pred 2 holds and bsf 2 and 3 are covering
-	second iteration is not predicate_1 + predicate 2 + bsf 3
-	if this call returns unsat, then bsf 2 is correct where pred 1 does not hold and pred 2 holds 
-	and bsf 3 is covering
+	val constraints = SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
 	
-	define prog
+	code += s"(assert (not $constraints))\n"
 	
-	assert (pred 1) //look for counterexample outside this space, but where bsf 2 and bsf 3 do not cover
-	assert (not (spec on bsf 2)) //bsf 2 must be incorrect to get a counterexample here
-	assert (not (spec on bsf 3)) //bsf 3 must be incorrect to get a counterexample here
+	Console.println(code)
 	
-	if unsat then counterexample could not be found space covered by pred 1 and where bsf 2 and bsf 3 are correct...
-	pred 1 can only cover the input space on which bsf 1 is correct, so subsequently...
-	bsf 1 is true where pred 1 holds and bsf 2 and bsf 3 are covering
-	
-	define prog
-	
-	assert (pred 1) //look for counterexample outside this space, but also where pred 2 and bsf 3 do not cover
-	assert (pred 2) //look for counterexample outside this space, but also where pred 1 and bsf 3 do not cover
-	assert (not (spec on bsf 3)) //bsf 3 must be incorrect to get a counterexample here.
-	
-	OK now this makes a lot more sense... so at the end bsf 3 is provably correct when counterexamples
-	cannot be provided from the union of pred 1/pred 2
-	
-	ite (not(or(pred_1,pred_2), bsf_3, ite(pred_2, bsf_2, bsf_1))
-	
-	
-	bsf 3 covers the intersection of pred 1 and 2, then bsf 2 the rest of pred 2, and bsf 1 the rest of pred 1
-	
-	so... the area where a counterexample for bsf 3 can be drawn is where pred 1 and pred 2 are false...
-	
-	
-	if there were 4... it would be
-	
-	ite (and (pred_3,pred_2,pred_1), bsf_4, ite(and(pred_2,pred_1), bsf_3, ite(pred_2, bsf_2, bsf_1)))
-	
-	
-	*/
+	CheckSatQuery(code, satCmds)
+	 
   }
 }
+
+
 
 
 

@@ -72,8 +72,8 @@ class EvaluatorCompleteTestsDiscrete(domain: RecursiveDomain[Any, Any], state: S
     assert(test._2.isDefined, "Trying to evaluate using the domain a test without defined expected output.")
     try {
 		
-       //for STUN check if the input is covered by an ICC, if so we short circuit to 1
-	   //if we do this before finding output, I suspect we will achieve substantial time savings
+      //hey, it's this part again...
+	  //cool so we just need to call evalTest
       val testInput: Map[String, Any] = test._1
       val testOutput: Option[Any] = test._2
       val inputVector = state.synthTask.argNames.map(testInput(_))
