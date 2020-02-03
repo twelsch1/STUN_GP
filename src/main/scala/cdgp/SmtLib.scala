@@ -125,7 +125,7 @@ class TemplateVerification(sygusData: SygusProblemData,
 	val fname = sygusData.synthTask.fname
 	val constraints = SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
 	
-	/*
+	
 	//we add our arguments for the formatting, first and always present is the current synth fun code 
 	val args = ListBuffer[String]()
 	//add currentBSF as the actual fun
@@ -165,12 +165,13 @@ class TemplateVerification(sygusData: SygusProblemData,
 	if (predCode == 0) code += s"(assert(ite (= 0 $program) (not $constraints) (and $cover )))\n  "
 	else if (predCode == 1) code += s"(assert(ite (= 0 $program) false (and $cover )))\n  "
 	else if (predCode == 2) code += s"(assert(ite (= 0 $program) (not $constraints) false))\n  "
-	*/
+	
+	
 
 
 	//code below is for the max version... let's see how much faster it is for max5, figure out the property,
 	//and prove that we can allow the above for this property and choose the below when said property is not present.
-	
+	/*
 	val template: String = createTemplate(0, predSynth)
 	
     //unpack our args list for the formatting
@@ -182,7 +183,14 @@ class TemplateVerification(sygusData: SygusProblemData,
 	if (predCode == 0) code += s"(assert(ite (= 0 $program) (not $constraints) $constraints))\n  "
 	else if (predCode == 1) code += s"(assert(ite (= 0 $program) false $constraints ))\n  "
 	else if (predCode == 2) code += s"(assert(ite (= 0 $program) (not $constraints) false))\n  "
+	*/
 	
+	
+	/*
+	if (predCode == 0) code += s"(assert( => (not( = (not $constraints) $constraints))(ite (= 0 $program) (not $constraints) $constraints)))\n  "
+	else if (predCode == 1) code += s"(assert( => (not( = (not $constraints) $constraints)) (ite (= 0 $program) false $constraints)))\n  "
+	else if (predCode == 2) code += s"(assert( => (not (= (not $constraints) $constraints)) (ite (= 0 $program) (not $constraints) false)))\n  "
+	*/
 	
 
     CheckSatQuery(code, satCmds)

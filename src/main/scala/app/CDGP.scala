@@ -209,15 +209,24 @@ object CDGP {
 			//let's hope this works better...
 		var keepGoing = true
 		var assertion = Op(0)
+		//var genInt = 25 
+		//makes logic below irrelevant
+		var genInt = opt('maxGenerations).toInt
 		while (keepGoing) {
 		val predEval = EvalDiscrete.EvalCDGPPredicateSeqInt(state, testsTypesForRatio,0.75)
-		val predAlg = CDGPPredicateGenerationalLexicase(predEval,maxGenOverride=40)
+		val predAlg = CDGPPredicateGenerationalLexicase(predEval,maxGenOverride=genInt)
 		val predPop = Main.watchTime(predAlg, RunExperiment(predAlg))
 		
 		val (predSynthesized, _) = state.verify(predAlg.bsf.bestSoFar.get._1)
 		if (predSynthesized == "unsat") {
 			keepGoing = false
 			assertion = predAlg.bsf.bestSoFar.get._1
+		} else {
+			//genInt += 1
+			//state.clearTests()
+			if (genInt > opt('maxGenerations).toInt)
+				keepGoing = false
+			//we increase number of gens but keep tests same
 		}
 		
 		}
