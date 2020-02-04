@@ -137,8 +137,9 @@ object CDGP {
 		val startTime = System.nanoTime
 		
 		
-		val genInterval = 2 //to do make this a command line option
-
+		//val genInterval = 2 //to do make this a command line option
+		val genInterval = 2
+		
 		//but maybe less time to synthesize them
 		var currentGen = genInterval
 		val maxGen = opt("maxGenerations").toInt
@@ -200,30 +201,34 @@ object CDGP {
 		
 		//so why isn't this working?
 		//where can the counterexample be?
+		 val predState = StateCDGP(benchmark,true)
+		 predState.bsfs = state.bsfs
 		for (i <- 1 until unifIterations) { 
 		val iterStartTime = System.nanoTime
-			state.predSynthIndex = i
+			//state.predSynthIndex = i
 			//state.setPredicateTestsFromBSFTestsFresh(bsfResults(i),ioTestsByIteration(i)) //for now just clears...
-			//state.clearTests()
-		state.currentBSF = state.bsfs(i)
+		predState.clearTests()
+			
+		predState.predSynthIndex = i
+		predState.currentBSF = state.bsfs(i)
 			//let's hope this works better...
 		var keepGoing = true
 		var assertion = Op(0)
-		//var genInt = 25 
+		var genInt = 25 
 		//makes logic below irrelevant
-		var genInt = opt('maxGenerations).toInt
+		//var genInt = opt('maxGenerations).toInt
 		while (keepGoing) {
-		val predEval = EvalDiscrete.EvalCDGPPredicateSeqInt(state, testsTypesForRatio,0.75)
+		val predEval = EvalDiscrete.EvalCDGPPredicateSeqInt(predState, testsTypesForRatio,0.75)
 		val predAlg = CDGPPredicateGenerationalLexicase(predEval,maxGenOverride=genInt)
 		val predPop = Main.watchTime(predAlg, RunExperiment(predAlg))
 		
-		val (predSynthesized, _) = state.verify(predAlg.bsf.bestSoFar.get._1)
+		val (predSynthesized, _) = predState.verify(predAlg.bsf.bestSoFar.get._1)
 		if (predSynthesized == "unsat") {
 			keepGoing = false
 			assertion = predAlg.bsf.bestSoFar.get._1
 		} else {
-			//genInt += 1
-			//state.clearTests()
+			genInt += 5
+			predState.clearTests()
 			if (genInt > opt('maxGenerations).toInt)
 				keepGoing = false
 			//we increase number of gens but keep tests same

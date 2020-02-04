@@ -389,7 +389,8 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
       else {
 		
 		var model = Map[String, Any]()
-		var output = 0 
+		//var output = 0 
+		var output = true
 		//we can just do the full verification if we already have max number of tests
 		
 		if (state.testsManager.newTests.size < state.maxPredTests) {
@@ -403,10 +404,12 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
 				(true,evalTests) //perfect 
 			} else if (decisionOne == "sat" && decisionTwo == "unsat") {
 				model = GetValueParser(rOne.get).toMap
-				output = 0
+				//output = 0
+				output = true
 			} else if (decisionOne == "unsat" && decisionTwo == "sat") {
 				model = GetValueParser(rTwo.get).toMap
-				output = 1
+				//output = 1
+				output = false
 			} else if (decisionOne == "sat" && decisionTwo == "sat") {
 				val coinFlip = state.randy.nextDouble()
 				val threshold = 0.5
@@ -414,17 +417,21 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
 				//do a coin flip to randomize which one to grab, if we encounter a duplicate we'll try the other
 				if (coinFlip < threshold) {
 					model = GetValueParser(rOne.get).toMap
-					output = 0
+					//output = 0
+					output = true
 					if (state.testsManager.tests.contains(model)) {
 						model = GetValueParser(rTwo.get).toMap
-						output = 1
+						//output = 1
+						output = false
 					}
 				} else {
 					model = GetValueParser(rTwo.get).toMap
-					output = 1
+					//output = 1
+					output = false
 					if (state.testsManager.tests.contains(model)) {
 						model = GetValueParser(rOne.get).toMap
-						output = 0
+						//output = 0
+						output = true
 					}
 				}
 			

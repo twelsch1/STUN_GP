@@ -104,7 +104,7 @@ case class SygusSynthTask(fname: String,
     val modGrammar = grammarSygus.map{ case (k, seq) =>
       (k, seq.map{
         case cm @ SygusUtils.ConstantMarker(tpe) =>
-          if (tpe == "Int") ConstantProviderUniformI(-10, 10)(rng)
+          if (tpe == "Int") ConstantProviderUniformI(-10, 15)(rng)
           else if (tpe == "Real") ConstantProviderUniformD(-1.0, 1.0)(rng)
           else throw new Exception(s"Unsupported constant type: $tpe")
         case x => x
@@ -138,14 +138,16 @@ object SygusSynthTask {
 		   
         val grammar = SygusUtils.retrieveGrammar(ntDefs)
 		//if (predSynth) logic = "PRED"
-		//Console.println(logic)
+		Console.println("In 14")
+		Console.println(logic)
 		//val grammar = SygusUtils.defaultGrammar(logic, args, se)
         SygusSynthTask(sym, args, se, grammar) // name, function syntax, args list, output type
       }
       case SynthFunCmd16(sym: String, args: List[(String, SortExpr)], se: SortExpr) => {
 		//if (predSynth) logic = "PRED"
-		//Console.println(logic)
-        val grammarSygus = SygusUtils.defaultGrammar(logic, args, se)
+		Console.println(predSynth)
+		Console.println("In 16")
+        val grammarSygus = SygusUtils.defaultGrammar(logic, args, se,predSynth)
         SygusSynthTask(sym, args, se, grammarSygus)
       }
     }
@@ -169,19 +171,22 @@ object SygusUtils {
   def varsForGrammar(vars: Seq[(String, SortExpr)], se: SortExpr): Seq[Symbol] =
     vars.filter(_._2 == se).map{ x => Symbol(x._1) }
 
-  def defaultGrammar(logic: String, vars: Seq[(String, SortExpr)], se: SortExpr): Seq[(Any, Seq[Any])] = {
+  def defaultGrammar(logic: String, vars: Seq[(String, SortExpr)], se: SortExpr, predSynth: Boolean = false): Seq[(Any, Seq[Any])] = {
     val boolVars = varsForGrammar(vars, BoolSortExpr())
     lazy val bp_int = prodLIA_bool(boolVars)
     lazy val bp_real = prodLRA_bool(boolVars)
     val prods = logic match {
       case "LIA" | "QF_LIA" => List(bp_int, prodLIA(varsForGrammar(vars, IntSortExpr())), constInt)
-	  case "PRED" => List(bp_int, prodLIA_bool(varsForGrammar(vars, IntSortExpr())), constInt)
+	  //case "PRED" => List(bp_int, prodLIA_bool(varsForGrammar(vars, IntSortExpr())), constInt)
       case "NIA" | "QF_NIA" => List(bp_int, prodNIA(varsForGrammar(vars, IntSortExpr())))
       case "LRA" | "QF_LRA" => List(bp_real, prodLRA(varsForGrammar(vars, RealSortExpr())), constReal)
       case "NRA" | "QF_NRA" => List(bp_real, prodNRA(varsForGrammar(vars, RealSortExpr())))
       case _ => throw new Exception(s"No default grammar defined for logic: $logic")
     }
-    if (se.name == "Bool") prods
+	//Console.println(prods)
+    if (se.name == "Bool" || predSynth) { 
+	prods
+	}
     else prods.tail :+ prods.head  // set different initial symbol
   }
 

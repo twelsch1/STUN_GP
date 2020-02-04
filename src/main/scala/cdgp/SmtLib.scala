@@ -161,35 +161,40 @@ class TemplateVerification(sygusData: SygusProblemData,
 	
 	//if code is 0, check both sides, if code is 1 returns sat where predicate missasigns to cover and unsat otherwise
 	//if code is 2 returns sat where predicates misassigns to currentBSF and unsat otherwise
-
-	if (predCode == 0) code += s"(assert(ite (= 0 $program) (not $constraints) (and $cover )))\n  "
-	else if (predCode == 1) code += s"(assert(ite (= 0 $program) false (and $cover )))\n  "
-	else if (predCode == 2) code += s"(assert(ite (= 0 $program) (not $constraints) false))\n  "
+	
+	
+	
+	if (predCode == 0) code += s"(assert(ite $program (not $constraints) (and $cover )))\n  "
+	else if (predCode == 1) code += s"(assert(ite $program false (and $cover )))\n  "
+	else if (predCode == 2) code += s"(assert(ite $program (not $constraints) false))\n  "
 	
 	
 
 
 	//code below is for the max version... let's see how much faster it is for max5, figure out the property,
 	//and prove that we can allow the above for this property and choose the below when said property is not present.
-	/*
-	val template: String = createTemplate(0, predSynth)
+	
+	
+	//val template: String = createTemplate(0, predSynth)
 	
     //unpack our args list for the formatting
-    var code = template.format(sygusData.synthTask.getSynthFunCode(bsfs(predSynth)))
+    //var code = template.format(sygusData.synthTask.getSynthFunCode(bsfs(predSynth)))
 	code += "\n"
  
 	code += "\n"
 	
-	if (predCode == 0) code += s"(assert(ite (= 0 $program) (not $constraints) $constraints))\n  "
-	else if (predCode == 1) code += s"(assert(ite (= 0 $program) false $constraints ))\n  "
-	else if (predCode == 2) code += s"(assert(ite (= 0 $program) (not $constraints) false))\n  "
+	//code += s"(assert(not(= (not $constraints) $constraints)))"
+	
+	/*if (predCode == 0) code += s"(assert(ite $program (not $constraints) $constraints))\n  "
+	else if (predCode == 1) code += s"(assert(ite $program false $constraints))\n  "
+	else if (predCode == 2) code += s"(assert(ite $program (not $constraints) false))\n  "
 	*/
 	
 	
-	/*
-	if (predCode == 0) code += s"(assert( => (not( = (not $constraints) $constraints))(ite (= 0 $program) (not $constraints) $constraints)))\n  "
-	else if (predCode == 1) code += s"(assert( => (not( = (not $constraints) $constraints)) (ite (= 0 $program) false $constraints)))\n  "
-	else if (predCode == 2) code += s"(assert( => (not (= (not $constraints) $constraints)) (ite (= 0 $program) (not $constraints) false)))\n  "
+	
+	/*if (predCode == 0) code += s"(assert( => (not( = (not $constraints) $constraints))(ite $program (not $constraints) (and $cover ))))\n  "
+	else if (predCode == 1) code += s"(assert( => (not( = (not $constraints) $constraints)) (ite $program false	(and $cover ))))\n  "
+	else if (predCode == 2) code += s"(assert( => (not (= (not $constraints) $constraints)) (ite $program (not $constraints) false)))\n  "
 	*/
 	
 
@@ -367,7 +372,8 @@ class TemplateFinalVerification(sygusData: SygusProblemData,
 	for (i <- ((assertions.length-1) to 0 by -1)) {
 		 val assertion = SMTLIBFormatter.opToString(assertions(i))
 		 val prog = SMTLIBFormatter.opToString(bsfs(i+1))
-		 unifiedProg += s"(ite ( = 0 $assertion) $prog "
+		 //unifiedProg += s"(ite ( = 0 $assertion) $prog "
+		 unifiedProg += s"(ite $assertion $prog "
 	 }
 	 val elseProg = SMTLIBFormatter.opToString(bsfs(0))
      unifiedProg += s" $elseProg"

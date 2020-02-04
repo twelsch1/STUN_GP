@@ -34,7 +34,7 @@ abstract class State(val sygusData: SygusProblemData,
   var initFromPreviousPopulations = false
   val previousPopulations = mutable.ListBuffer[StatePop[(Op, Fitness)]]()
   var currentBSF = Op(0)
-  val bsfs = mutable.ListBuffer[Op]()
+  var bsfs = mutable.ListBuffer[Op]()
   val assertions = mutable.ListBuffer[Op]()
   val coveredTests = mutable.ArrayBuffer[(I, Option[O])]()
   
@@ -85,6 +85,16 @@ abstract class State(val sygusData: SygusProblemData,
     }
 
   def simplifySolution(smtlib: String): Option[String] = None
+  
+  /*
+  def verify(s: Op, template: TemplateVerification): (String, Option[String]) = ("", None)
+  
+  def verify(s: Op): (String, Option[String]) = ("",None)
+*/
+  /**
+    * Verifies a program with respect to the specification using the provided template.
+    */
+
 
   def solver: SolverManager
 
@@ -205,6 +215,7 @@ class StateSMTSolver(sygusData: SygusProblemData,
   
   
   def verifyPred(s: Op, predCode: Int = 0) : (String, Option[String]) = {
+	//Console.println("My program is " + s)
 	val query = templateVerification(s,bsfs,predSynthIndex,assertions,predCode)
     printQuery("\nQuery verify:\n" + query)
     solver.runSolver(query)
@@ -352,6 +363,8 @@ class StateCDGP(sygusData: SygusProblemData,
   def isSingleAnswer(sygusData: SygusProblemData): Boolean = {
     sygusData.singleInvocFormal && !regression && hasSingleAnswerForEveryInput(sygusData.problem).getOrElse(false)
   }
+  
+  
 
   /**
     * Creates a complete or incomplete test depending on the circumstances.

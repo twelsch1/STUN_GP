@@ -202,6 +202,7 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
   override def iter = (s: StatePop[(Op, E)]) => (
     createBreeder(s) andThen
     evaluate andThen
+	verifyPop andThen
     updateAfterIteration andThen
     bsf)(s)
   override def initialize  = 
@@ -212,19 +213,61 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
   if (maxGenOverride == 0) Termination(correct) ++ Seq(Termination.MaxIter(it), (s: StatePop[(Op,E)]) => validSetTermination(bsf))
   else Termination(correct) ++ Seq(Termination.MaxIter(it,maxGenOverride), (s: StatePop[(Op,E)]) => validSetTermination(bsf))
   //override def evaluate = cdgpEval
+  def verifyPop: StatePop[(Op,E)] => StatePop[(Op,E)] = 
+   (s: StatePop[(Op,E)]) => {
+	cdgpEval.state.testsManager.flushHelpers()   
+	s
+	   //Console.println(s(0)._2.testsPassed)
+	 /*  val testsRatio = opt('testsRatio)
+	   //means we have to do equal for now, which is probably fine...
+	   val maxTests = opt('maxNewTestsPerIter) 
+	   val sortedPop = s.sortWith((a,b) => a._2.passedTests > b._2.passedTests).to[ListBuffer]
+	   var i = 0
+	   //var newTests = 0
+	   //go until end of list OR we have hit max tests OR we have an example below the ratio
+	   while (i < sortedPop.length && cdgpState.testsManager.newTests.size < maxTests && 
+	   ((sortedPop(i)._2.totalTests) == 0 || (sortedPop(i)._2.passedTests/ sortedPop(i)._2.totalTests) >= testsRatio)
+	   ) {
+		   val (decision, model) = cdgpEval.state.verify(sortedPop(i)._1)
+		   if (decision == "unsat") {
+			   sortedPop(i)._2.correct = true
+		   } else if (decision == "sat") {
+		    val newTest = cdgpState.createTestFromFailedVerification(model.get)
+		
+            if (newTest.isDefined) {
+              cdgpState.testsManager.addNewTest(newTest.get, allowInputDuplicates=false, allowTestDuplicates=false)
+			}
+		   }
+		   
+		   i += 1
+		   
+	   }
+	   
+	   //for the remaining perfect ones, we still verify including where totalTests is 0 i.e. first iteration we check everything...
+	   while (i < sortedPop.length && (sortedPop(i)._2.passedTests == sortedPop(i)._2.totalTests)) {
+		   val (decision, _) = cdgpState.verify(sortedPop(i)._1)
+		   if (decision == "unsat") {
+			 sortedPop(i)._2.correct = true
+		   }
+		   
+		   i += 1
+	   }
+		
+	  
+	   cdgpEval.state.testsManager.flushHelpers()  //makes sure tests are added
+			
+	   StatePop(sortedPop.map{(op,e) => (op,e)})*/
+	   //cdgpState.hello()
+
+   }
   override def evaluate: StatePop[Op] => StatePop[(Op,E)] = 
 
     (s: StatePop[Op]) => {
 
-	  var v = s
-	  if (cdgpEval.state.initFromPreviousPopulations) {
-		v = popFromPrevious
-		cdgpEval.state.initFromPreviousPopulations = false
-	  }
-	  cdgpEval.state.testsManager.flushHelpers()  //makes sure tests are added
+	  //cdgpEval.state.testsManager.flushHelpers()  //makes sure tests are added
 	  //cdgpEval.state.addNewTests = false
 	  val evalStart = System.nanoTime 
-      val intercept = StatePop(v.map{ op => (op, cdgpEval.eval(op, init=false)) })
+      val intercept = StatePop(s.map{ op => (op, cdgpEval.eval(op, init=false)) })
 	  
 	  val evalEnd = System.nanoTime
 	  val evalTime = (evalEnd - evalStart) / 1000000000.0
@@ -349,6 +392,7 @@ object CDGPGenerationalStaticBreeder {
     implicit val ordering = cdgpEval.eval.ordering
     val grammar = cdgpEval.eval.state.sygusData.getSwimGrammar(rng)
     val moves = GPMoves(grammar, Common.isFeasible(cdgpEval.eval.state.synthTask.fname, opt))
+	Console.println(moves)
     val correct = Common.correct(cdgpEval.eval)
     new CDGPGenerationalStaticBreeder(moves, cdgpEval, correct, sel, validTermination, maxGenOverride)
   }
