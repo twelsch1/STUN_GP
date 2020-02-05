@@ -67,7 +67,7 @@ object SimplifyQuery {
 class TemplateVerification(sygusData: SygusProblemData,
                            includeTestConstr: Boolean = false,
                            timeout: Int = 0,
-                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function5[Op, Seq[Op], Int, Seq[Op], Int, CheckSatQuery] {
+                           constraints: Option[Seq[ConstraintCmd]] = None) extends Function6[Op, Seq[Op], Int, Seq[Op], Int, Boolean, CheckSatQuery] {
   def createTemplate(additionalFunctions: Int = 0, predSynth: Int = -1) : String = {
     val constraintsPre = SMTLIBFormatter.getCodeForConstraints(sygusData.precond)
 	//Console.println("pre " + constraintsPre)
@@ -112,20 +112,21 @@ class TemplateVerification(sygusData: SygusProblemData,
  
   val satCmds = s"(get-value (${sygusData.varDecls.map(_.sym).mkString(" ")}))\n"
 
- override def apply(program: Op, bsfs: Seq[Op] = ListBuffer[Op](), predSynth: Int = -1, assertions: Seq[Op] = ListBuffer[Op](), predCode: Int = 0): CheckSatQuery = {
+ override def apply(program: Op, bsfs: Seq[Op] = ListBuffer[Op](), predSynth: Int = -1, assertions: Seq[Op] = ListBuffer[Op](), predCode: Int = 0, singleAnswer: Boolean = false): CheckSatQuery = {
 	val bsfStrings = ListBuffer[String]()
 	for (bsf <- bsfs)
 		bsfStrings += SMTLIBFormatter.opToString(bsf)
 	
-    apply(SMTLIBFormatter.opToString(program), bsfStrings, predSynth,assertions, predCode)
+    apply(SMTLIBFormatter.opToString(program), bsfStrings, predSynth,assertions, predCode, singleAnswer)
   }
 
-  def apply(program: String, bsfs: Seq[String], predSynth: Int, assertions: Seq[Op], predCode: Int): CheckSatQuery = {
+  def apply(program: String, bsfs: Seq[String], predSynth: Int, assertions: Seq[Op], predCode: Int, singleAnswer: Boolean): CheckSatQuery = {
 	if (predSynth >= 0) {
 	val fname = sygusData.synthTask.fname
 	val constraints = SMTLIBFormatter.getCodeForMergedConstraints(sygusData.formalConstr)
+	var code = ""
 	
-	
+	if (!singleAnswer) {
 	//we add our arguments for the formatting, first and always present is the current synth fun code 
 	val args = ListBuffer[String]()
 	//add currentBSF as the actual fun
@@ -143,8 +144,8 @@ class TemplateVerification(sygusData: SygusProblemData,
 	
 	//get template, now different dependent on number of bsfs
 	//new verification defines first bsf as prog to check, and then remaining bsfs as those against
-	var code = template.format(args:_*)
-
+	code += template.format(args:_*)
+	code += "\n"
 
 	
 
@@ -162,40 +163,25 @@ class TemplateVerification(sygusData: SygusProblemData,
 	//if code is 0, check both sides, if code is 1 returns sat where predicate missasigns to cover and unsat otherwise
 	//if code is 2 returns sat where predicates misassigns to currentBSF and unsat otherwise
 	
-	
+	//Console.println("Yep it's just me")
 	
 	if (predCode == 0) code += s"(assert(ite $program (not $constraints) (and $cover )))\n  "
 	else if (predCode == 1) code += s"(assert(ite $program false (and $cover )))\n  "
 	else if (predCode == 2) code += s"(assert(ite $program (not $constraints) false))\n  "
+	} else {
 	
-	
-
-
-	//code below is for the max version... let's see how much faster it is for max5, figure out the property,
-	//and prove that we can allow the above for this property and choose the below when said property is not present.
-	
-	
-	//val template: String = createTemplate(0, predSynth)
+	val template: String = createTemplate(0, predSynth)
 	
     //unpack our args list for the formatting
-    //var code = template.format(sygusData.synthTask.getSynthFunCode(bsfs(predSynth)))
-	code += "\n"
- 
+    code += template.format(sygusData.synthTask.getSynthFunCode(bsfs(predSynth)))
 	code += "\n"
 	
-	//code += s"(assert(not(= (not $constraints) $constraints)))"
 	
-	/*if (predCode == 0) code += s"(assert(ite $program (not $constraints) $constraints))\n  "
+	if (predCode == 0) code += s"(assert(ite $program (not $constraints) $constraints))\n  "
 	else if (predCode == 1) code += s"(assert(ite $program false $constraints))\n  "
 	else if (predCode == 2) code += s"(assert(ite $program (not $constraints) false))\n  "
-	*/
 	
-	
-	
-	/*if (predCode == 0) code += s"(assert( => (not( = (not $constraints) $constraints))(ite $program (not $constraints) (and $cover ))))\n  "
-	else if (predCode == 1) code += s"(assert( => (not( = (not $constraints) $constraints)) (ite $program false	(and $cover ))))\n  "
-	else if (predCode == 2) code += s"(assert( => (not (= (not $constraints) $constraints)) (ite $program (not $constraints) false)))\n  "
-	*/
+	}
 	
 
     CheckSatQuery(code, satCmds)

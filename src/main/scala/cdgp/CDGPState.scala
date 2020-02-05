@@ -40,6 +40,8 @@ abstract class State(val sygusData: SygusProblemData,
   
   var maxPredTests = 10
   
+  var singleAnswerFormal = true
+  
   
   val ioTestsByIteration = mutable.ArrayBuffer[mutable.ArrayBuffer[(I, Option[O])]]()
   val bsfResults = mutable.ArrayBuffer[Seq[Int]]()
@@ -221,7 +223,8 @@ class StateSMTSolver(sygusData: SygusProblemData,
   
   override def verifyPred(s: Op, predCode: Int = 0) : (String, Option[String]) = {
 	//Console.println("My program is " + s)
-	val query = templateVerification(s,bsfs,predSynthIndex,assertions,predCode)
+	val query = templateVerification(s,bsfs,predSynthIndex,assertions,predCode,singleAnswerFormal)
+	
     printQuery("\nQuery verify:\n" + query)
     solver.runSolver(query)
   }
@@ -345,7 +348,7 @@ class StateCDGP(sygusData: SygusProblemData,
   var numRejectedCounterex = 0
 
 
-  lazy val singleAnswerFormal: Boolean = isSingleAnswer(sygusData)
+  singleAnswerFormal = isSingleAnswer(sygusData)
   val singleInvocFormal : Boolean = sygusData.singleInvocFormal
   //Console.println(sygusData.synthTask.uninterpSwimGrammar)
 //  Console.println(sygusData.synthTask.argNames)

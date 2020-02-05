@@ -215,7 +215,7 @@ object CDGP {
 		var keepGoing = true
 		var assertion = Op(0)
 		var genInt = 25 
-		//makes logic below irrelevant
+		//makes logic below irrelevant if set to gt maxGenerations
 		//var genInt = opt('maxGenerations).toInt
 		while (keepGoing) {
 		val predEval = EvalDiscrete.EvalCDGPPredicateSeqInt(predState, testsTypesForRatio,0.75)
@@ -231,7 +231,7 @@ object CDGP {
 			predState.clearTests()
 			if (genInt > opt('maxGenerations).toInt)
 				keepGoing = false
-			//we increase number of gens but keep tests same
+			//for now, just running with same number of gens each time
 		}
 		
 		}
