@@ -207,7 +207,7 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
     bsf)(s)
   override def initialize  = 
   //if (cdgpEval.state.initFromPreviousPopulations) popFromPrevious andThen evaluate andThen updateAfterIteration andThen bsf andThen it
-   RandomStatePop(moves.newSolution _) andThen evaluate andThen updateAfterIteration andThen bsf andThen it
+   RandomStatePop(moves.newSolution _) andThen evaluate andThen verifyPop andThen updateAfterIteration andThen bsf andThen it
   override def epilogue = super.epilogue andThen reportStats
   override def terminate =
   if (maxGenOverride == 0) Termination(correct) ++ Seq(Termination.MaxIter(it), (s: StatePop[(Op,E)]) => validSetTermination(bsf))
@@ -215,22 +215,85 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
   //override def evaluate = cdgpEval
   def verifyPop: StatePop[(Op,E)] => StatePop[(Op,E)] = 
    (s: StatePop[(Op,E)]) => {
-	cdgpEval.state.testsManager.flushHelpers()   
-	s
+	
+		//Console.println(numGenerations)
 	   //Console.println(s(0)._2.testsPassed)
-	 /*  val testsRatio = opt('testsRatio)
+	   val testsRatio = opt('testsRatio).toDouble
 	   //means we have to do equal for now, which is probably fine...
-	   val maxTests = opt('maxNewTestsPerIter) 
+	   val maxTests = opt('maxNewTestsPerIter).toInt 
 	   val sortedPop = s.sortWith((a,b) => a._2.passedTests > b._2.passedTests).to[ListBuffer]
 	   var i = 0
+	   //Console.println(sortedPop(0)._2)
+	   //sortedPop(0)._2.correct = true
+	  // val n = sortedPop(0)._2.totalTests
+	   //val something = FSeqInt(true, sortedPop(0)._2.take(n),sortedPop(0)._1.size)
 	   //var newTests = 0
 	   //go until end of list OR we have hit max tests OR we have an example below the ratio
 	   while (i < sortedPop.length && cdgpState.testsManager.newTests.size < maxTests && 
 	   ((sortedPop(i)._2.totalTests) == 0 || (sortedPop(i)._2.passedTests/ sortedPop(i)._2.totalTests) >= testsRatio)
 	   ) {
-		   val (decision, model) = cdgpEval.state.verify(sortedPop(i)._1)
+		   
+		if (cdgpState.predSynthIndex >= 0) {
+			//let's synthesize some predicates
+			var model = Map[String, Any]()
+	
+			var output = true
+		
+			val (decisionOne, rOne) = cdgpState.verifyPred(sortedPop(i)._1, 1)
+			val (decisionTwo, rTwo) = cdgpState.verifyPred(sortedPop(i)._1, 2)
+			//if both are unsat, we are done, if just one is unsat try for the other one,
+			//otherwise we "flip a coin" to pick between the two
+			try {
+			if (decisionOne == "unsat" && decisionTwo == "unsat") {
+			   cdgpState.runVerify = true
+			   sortedPop(i) = (sortedPop(i)._1, cdgpEval.eval(sortedPop(i)._1, init=false))
+			   //Console.println(sortedPop(i))
+			   cdgpState.runVerify = false
+			} else if (decisionOne == "sat" && decisionTwo == "unsat") {
+				model = GetValueParser(rOne.get).toMap
+				output = true
+			} else if (decisionOne == "unsat" && decisionTwo == "sat") {
+				model = GetValueParser(rTwo.get).toMap
+				//output = 1
+				output = false
+			} else if (decisionOne == "sat" && decisionTwo == "sat") {
+				val coinFlip = cdgpState.randy.nextDouble()
+				val threshold = 0.5
+
+				//do a coin flip to randomize which one to grab, if we encounter a duplicate we'll try the other
+				if (coinFlip < threshold) {
+					model = GetValueParser(rOne.get).toMap
+					output = true
+					if (cdgpState.testsManager.tests.contains(model)) {
+						model = GetValueParser(rTwo.get).toMap
+						output = false
+					}
+				} else {
+					model = GetValueParser(rTwo.get).toMap
+					output = false
+					if (cdgpState.testsManager.tests.contains(model)) {
+						model = GetValueParser(rOne.get).toMap
+						output = true
+					}
+				}
+			
+			}
+			
+			 } catch {
+				 case e: Throwable => Console.println("Ran into parser error")
+			 }
+			if (!cdgpState.testsManager.tests.contains(model) && !model.isEmpty) {
+				cdgpState.addPredTest(model,output) //just a wrapper for adding the test
+			}
+
+		} else {
+		   val (decision, model) = cdgpState.verify(sortedPop(i)._1)
 		   if (decision == "unsat") {
-			   sortedPop(i)._2.correct = true
+			   //Console.println("Victory, just need to finish it off")
+			   cdgpState.runVerify = true
+			   sortedPop(i) = (sortedPop(i)._1, cdgpEval.eval(sortedPop(i)._1, init=false))
+			   //Console.println(sortedPop(i))
+			   cdgpState.runVerify = false
 		   } else if (decision == "sat") {
 		    val newTest = cdgpState.createTestFromFailedVerification(model.get)
 		
@@ -239,26 +302,49 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
 			}
 		   }
 		   
+		}
+		   
 		   i += 1
 		   
 	   }
 	   
 	   //for the remaining perfect ones, we still verify including where totalTests is 0 i.e. first iteration we check everything...
-	   while (i < sortedPop.length && (sortedPop(i)._2.passedTests == sortedPop(i)._2.totalTests)) {
+	   while (i < sortedPop.length && sortedPop(i)._2.totalTests > 0 &&(sortedPop(i)._2.passedTests == sortedPop(i)._2.totalTests)) {
+		   
+		   if (cdgpState.predSynthIndex >= 0) {
+			   
+			val (decision, _) = cdgpState.verifyPred(sortedPop(i)._1, 0)  //if we don't need any more tests, we just check for unsat in one call
+			if (decision == "unsat") {
+			   cdgpState.runVerify = true
+			   sortedPop(i) = (sortedPop(i)._1, cdgpEval.eval(sortedPop(i)._1, init=false))
+			   //Console.println(sortedPop(i))
+			   cdgpState.runVerify = false
+			} 
+			   
+		   } else {
 		   val (decision, _) = cdgpState.verify(sortedPop(i)._1)
 		   if (decision == "unsat") {
-			 sortedPop(i)._2.correct = true
+			   //Console.println("Victory, just need to finish it off")
+			   cdgpState.runVerify = true
+			   sortedPop(i) = (sortedPop(i)._1, cdgpEval.eval(sortedPop(i)._1, init=false))
+			   //Console.println(sortedPop(i))
+			   cdgpState.runVerify = false
 		   }
-		   
+		   }
 		   i += 1
 	   }
 		
 	  
 	   cdgpEval.state.testsManager.flushHelpers()  //makes sure tests are added
 			
-	   StatePop(sortedPop.map{(op,e) => (op,e)})*/
-	   //cdgpState.hello()
+	   StatePop(sortedPop)
 
+
+//These go together...
+/*
+cdgpEval.state.testsManager.flushHelpers()   
+	s
+	*/
    }
   override def evaluate: StatePop[Op] => StatePop[(Op,E)] = 
 
@@ -267,6 +353,7 @@ abstract class CDGPGenerationalCore[E <: Fitness](moves: GPMoves,
 	  //cdgpEval.state.testsManager.flushHelpers()  //makes sure tests are added
 	  //cdgpEval.state.addNewTests = false
 	  val evalStart = System.nanoTime 
+	  //cdgpEval.state.testsManager.flushHelpers()
       val intercept = StatePop(s.map{ op => (op, cdgpEval.eval(op, init=false)) })
 	  
 	  val evalEnd = System.nanoTime

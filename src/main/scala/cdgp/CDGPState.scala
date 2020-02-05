@@ -30,7 +30,7 @@ abstract class State(val sygusData: SygusProblemData,
   val sizeTestSet: Option[Int] = opt.getOptionInt("sizeTestSet")
 
 
-  var addNewTests = true
+  var runVerify = false
   var initFromPreviousPopulations = false
   val previousPopulations = mutable.ListBuffer[StatePop[(Op, Fitness)]]()
   var currentBSF = Op(0)
@@ -86,11 +86,16 @@ abstract class State(val sygusData: SygusProblemData,
 
   def simplifySolution(smtlib: String): Option[String] = None
   
-  /*
   def verify(s: Op, template: TemplateVerification): (String, Option[String]) = ("", None)
   
   def verify(s: Op): (String, Option[String]) = ("",None)
-*/
+  
+  def createTestFromFailedVerification(verOutput: String): Option[TestCase[I, O]] = None
+  
+  def verifyPred(s: Op, predCode: Int = 0) : (String, Option[String]) = ("", None)
+  
+  def addPredTest(model: Map[String, Any], output: Boolean){}
+
   /**
     * Verifies a program with respect to the specification using the provided template.
     */
@@ -202,19 +207,19 @@ class StateSMTSolver(sygusData: SygusProblemData,
   /**
     * Verifies a program with respect to the specification. Model is returned as a raw output from the solver.
     */
-  def verify(s: Op): (String, Option[String]) = verify(s, templateVerification)
+  override def verify(s: Op): (String, Option[String]) = verify(s, templateVerification)
 
   /**
     * Verifies a program with respect to the specification using the provided template.
     */
-  def verify(s: Op, template: TemplateVerification): (String, Option[String]) = {
+  override def verify(s: Op, template: TemplateVerification): (String, Option[String]) = {
     val query = template(s,bsfs,predSynthIndex,assertions)
     printQuery("\nQuery verify:\n" + query)
     solver.runSolver(query)
   }
   
   
-  def verifyPred(s: Op, predCode: Int = 0) : (String, Option[String]) = {
+  override def verifyPred(s: Op, predCode: Int = 0) : (String, Option[String]) = {
 	//Console.println("My program is " + s)
 	val query = templateVerification(s,bsfs,predSynthIndex,assertions,predCode)
     printQuery("\nQuery verify:\n" + query)
@@ -559,7 +564,7 @@ class StateCDGP(sygusData: SygusProblemData,
 	testsManager.flushHelpers()
   } 
 
-  def createTestFromFailedVerification(verOutput: String): Option[TestCase[I, O]] = {
+ override def createTestFromFailedVerification(verOutput: String): Option[TestCase[I, O]] = {
     try {
       // NOTE: should map be used for this? Wouldn't Seq work better?
       val model = GetValueParser(verOutput).toMap // parse model returned by solver
@@ -576,6 +581,12 @@ class StateCDGP(sygusData: SygusProblemData,
         None
     }
   }
+  
+ override def addPredTest(model: Map[String, Any], output: Boolean) {
+	 	
+	testsManager.addNewTest(createCompleteTest(model,Some(output)), allowInputDuplicates=false, allowTestDuplicates=false)
+		
+ }
   
     def createTestFromFailedPredicateVerification(verOutput: String): Option[TestCase[I, O]] = {
     try {

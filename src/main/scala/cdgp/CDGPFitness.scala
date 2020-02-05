@@ -334,16 +334,24 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
 
 
   /** Fitness is always computed on the tests that were flushed. */
-  def fitnessCDGPGeneral(ignoreVerification: Boolean = false, addNewTests: Boolean = true): Op => (Boolean, Seq[Int]) =
-    if (state.sygusData.formalInvocations.isEmpty) fitnessOnlyTestCases
-    else (s: Op) => {
-      val tests = state.testsManager.getTests()
-      val evalTests = evalOnTestsAndConstraints(s, tests)
+  def fitnessCDGPGeneral(ignoreVerification: Boolean = false, runVerify: Boolean = false): Op => (Boolean, Seq[Int]) =
+  //  if (state.sygusData.formalInvocations.isEmpty) fitnessOnlyTestCases
+    //else
+		(s: Op) => {
+		val tests = state.testsManager.getTests()
+		val evalTests = evalOnTestsAndConstraints(s, tests)
+		if (runVerify) {
+		  //actually, we already determined it was perfect...
+          (true, evalTests) // perfect program found; end of run
+		} else {
+		  (false, evalTests)
+		}
+
       // If the program passes the specified ratio of test cases, it will be verified
       // and a counterexample will be produced (or program will be deemed correct).
       // NOTE: if the program does not pass all test cases, then the probability is high
       // that the produced counterexample will already be in the set of test cases.
-      if ((ignoreVerification || !doVerify(evalTests, tests)))
+      /*if ((ignoreVerification || !doVerify(evalTests, tests)))
         (false, evalTests)
       else {
 		val start = System.nanoTime;
@@ -368,14 +376,21 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
           // and treating the program as incorrect.
           (false, evalTests)
         }
-      }
+      }*/
     }
 	
 	  /** Fitness is always computed on the tests that were flushed. */
-  def fitnessCDGPPredicate(ignoreVerification: Boolean = false, addNewTests: Boolean = true): Op => (Boolean, Seq[Int]) =
+  def fitnessCDGPPredicate(ignoreVerification: Boolean = false, runVerify: Boolean = false): Op => (Boolean, Seq[Int]) =
 	  (s: Op) => {
       val tests = state.testsManager.getTests()
       val evalTests = evalOnTestsAndConstraints(s, tests)
+	  
+	  if (runVerify) {
+		 (true, evalTests)
+	  } else {
+		 (false, evalTests)
+	  }
+	  /*
 	  val start = System.nanoTime;
 	  var retBool = false
       // If the program passes the specified ratio of test cases, it will be verified
@@ -440,12 +455,12 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
 			 } catch {
 				 case e: Throwable => Console.println("Ran into parser error")
 			 }
-			
+			*/
 			/*if (model.isEmpty) {
 				Console.println("The model was empty, here are the decisions " + decision + " " + decisionOne + " " + decisionTwo)
 				(false, evalTests)
 			}*/
-			
+	/*		
 			if (!state.testsManager.tests.contains(model) && !model.isEmpty) {
 				state.testsManager.addNewTest(state.createCompleteTest(model,Some(output)), allowInputDuplicates=false, allowTestDuplicates=false)
 			} 
@@ -468,13 +483,11 @@ abstract class EvalCDGPDiscrete[E](state: StateCDGP,
 		val end = System.nanoTime;
 		
 		state.verifyTime = state.verifyTime + (end - start) / 1000000000.0
-		(retBool,evalTests)
+		(retBool,evalTests)*/
 		
 		
     }
 	
-	
-	}
 
   }
 
@@ -549,7 +562,7 @@ object EvalDiscrete {
     val ordering = FSeqIntOrdering
     new EvalCDGPDiscrete(state, testsTypesForRatio, ec, ei, es, correct, ordering, testsRatioOverride) {
       override def apply(s: Op, init: Boolean): FSeqInt = {
-        val (isPerfect, eval) = fitnessCDGPGeneral(init, state.addNewTests)(s)
+        val (isPerfect, eval) = fitnessCDGPGeneral(init,state.runVerify)(s)
         FSeqInt(isPerfect, eval, s.size)
       }
       override def updateEval(s: (Op, FSeqInt)): (Op, FSeqInt) = {
@@ -568,7 +581,7 @@ object EvalDiscrete {
     val ordering = FSeqIntOrdering
     new EvalCDGPDiscrete(state, testsTypesForRatio, ec, ei, es, correct, ordering, testsRatioOverride) {
       override def apply(s: Op, init: Boolean): FSeqInt = {
-        val (isPerfect, eval) = fitnessCDGPPredicate(init, state.addNewTests)(s)
+        val (isPerfect, eval) = fitnessCDGPPredicate(init, state.runVerify)(s)
         FSeqInt(isPerfect, eval, s.size)
       }
       override def updateEval(s: (Op, FSeqInt)): (Op, FSeqInt) = {

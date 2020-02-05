@@ -227,7 +227,7 @@ object CDGP {
 			keepGoing = false
 			assertion = predAlg.bsf.bestSoFar.get._1
 		} else {
-			genInt += 5
+			//genInt += 5
 			predState.clearTests()
 			if (genInt > opt('maxGenerations).toInt)
 				keepGoing = false
